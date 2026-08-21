@@ -8,7 +8,7 @@ import {
   Queue,
   Briefcase,
   Robot,
-  SkullCrossbones,
+  Skull,
   ChartLine,
   Gear,
   SignOut,
@@ -23,7 +23,7 @@ const NAV = [
   { href: "/dashboard/queues",  label: "Queues",     icon: Queue },
   { href: "/dashboard/jobs",    label: "Jobs",       icon: Briefcase },
   { href: "/dashboard/workers", label: "Workers",    icon: Robot },
-  { href: "/dashboard/dlq",     label: "Dead Letter",icon: SkullCrossbones },
+  { href: "/dashboard/dlq",     label: "Dead Letter",icon: Skull },
   { href: "/dashboard/metrics", label: "Metrics",    icon: ChartLine },
   { href: "/dashboard/settings",label: "Settings",   icon: Gear },
 ];
@@ -35,7 +35,6 @@ export function Sidebar() {
 
   return (
     <aside className="flex flex-col w-56 shrink-0 border-r border-border bg-card h-screen sticky top-0">
-      {/* Logo */}
       <div className="h-14 px-4 flex items-center border-b border-border gap-2">
         <span className="w-7 h-7 rounded-md bg-amber-500 flex items-center justify-center text-black font-bold text-sm font-mono">
           DJQ
@@ -43,7 +42,6 @@ export function Sidebar() {
         <span className="text-sm font-semibold tracking-tight">dis-job-queue</span>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto scrollbar-thin">
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = path === href || (href !== "/dashboard" && path.startsWith(href));
@@ -65,7 +63,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
       <div className="p-3 border-t border-border space-y-1">
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

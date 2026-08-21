@@ -21,7 +21,6 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
-// ── Auth ───────────────────────────────────────────────────────────
 export const auth = {
   login: (email: string, password: string) =>
     req<{ access_token: string; refresh_token: string; user_id: string; name: string }>(
@@ -34,7 +33,6 @@ export const auth = {
     req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) }),
 };
 
-// ── Organizations ─────────────────────────────────────────────────
 export const orgs = {
   list: () => req<Org[]>("/orgs"),
   create: (name: string) => req<{ id: string }>("/orgs", { method: "POST", body: JSON.stringify({ name }) }),
@@ -42,7 +40,6 @@ export const orgs = {
   members: (id: string) => req<OrgMember[]>(`/orgs/${id}/members`),
 };
 
-// ── Projects ──────────────────────────────────────────────────────
 export const projects = {
   list: (orgId: string) => req<Project[]>(`/orgs/${orgId}/projects`),
   create: (orgId: string, name: string) =>
@@ -52,7 +49,6 @@ export const projects = {
   get: (id: string) => req<Project>(`/projects/${id}`),
 };
 
-// ── Queues ────────────────────────────────────────────────────────
 export const queues = {
   list: (projectId: string) => req<Queue[]>(`/projects/${projectId}/queues`),
   create: (projectId: string, data: CreateQueueInput) =>
@@ -66,7 +62,6 @@ export const queues = {
   delete: (id: string) => req(`/queues/${id}`, { method: "DELETE" }),
 };
 
-// ── Jobs ──────────────────────────────────────────────────────────
 export const jobs = {
   list: (queueId: string, params?: { limit?: number; offset?: number; status?: string }) => {
     const qs = new URLSearchParams();
@@ -91,7 +86,6 @@ export const jobs = {
   executions: (id: string) => req<JobExecution[]>(`/jobs/${id}/executions`),
 };
 
-// ── Workers ───────────────────────────────────────────────────────
 export const workers = {
   list: (projectId: string, status?: string) => {
     const qs = status ? `?status=${status}` : "";
@@ -100,7 +94,6 @@ export const workers = {
   get: (id: string) => req<{ worker: Worker; heartbeats: Heartbeat[] }>(`/workers/${id}`),
 };
 
-// ── DLQ ───────────────────────────────────────────────────────────
 export const dlq = {
   list: (queueId: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
@@ -112,13 +105,11 @@ export const dlq = {
   discard: (id: string) => req(`/dlq/${id}`, { method: "DELETE" }),
 };
 
-// ── Metrics ───────────────────────────────────────────────────────
 export const metrics = {
   project: (projectId: string) => req<ProjectMetrics>(`/projects/${projectId}/metrics`),
   queue: (queueId: string) => req<QueueMetrics>(`/queues/${queueId}/metrics`),
 };
 
-// ── Types ─────────────────────────────────────────────────────────
 export interface Org {
   id: string; name: string; slug: string; role?: string; created_at: string;
 }

@@ -73,9 +73,8 @@ export default function JobsPage() {
         </button>
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <Select value={selectedQueue} onValueChange={(v) => { setSelectedQueue(v); setPage(0); }}>
+        <Select value={selectedQueue} onValueChange={(v) => { if (v) { setSelectedQueue(v); setPage(0); } }}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Select queue" />
           </SelectTrigger>
@@ -86,7 +85,7 @@ export default function JobsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(0); }}>
+        <Select value={status} onValueChange={(v) => { if (v) { setStatus(v); setPage(0); } }}>
           <SelectTrigger className="w-36">
             <SelectValue />
           </SelectTrigger>
@@ -105,7 +104,6 @@ export default function JobsPage() {
         />
       </div>
 
-      {/* Table */}
       <div className="border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -145,7 +143,6 @@ export default function JobsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         {total > PAGE_SIZE && (
           <div className="px-4 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
             <span>{total} total · page {page + 1} of {totalPages}</span>

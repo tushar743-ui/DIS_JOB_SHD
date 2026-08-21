@@ -55,7 +55,7 @@ export default function MetricsPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Metrics</h1>
-        <Select value={selectedQueue} onValueChange={setSelectedQueue}>
+        <Select value={selectedQueue} onValueChange={(v) => v && setSelectedQueue(v)}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Select queue" />
           </SelectTrigger>
@@ -67,7 +67,6 @@ export default function MetricsPage() {
         </Select>
       </div>
 
-      {/* KPIs */}
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
@@ -93,7 +92,6 @@ export default function MetricsPage() {
         </div>
       )}
 
-      {/* Throughput chart */}
       {data && (
         <div className="border border-border rounded-lg p-4 bg-card">
           <h2 className="text-sm font-medium mb-4">Throughput (last 24h)</h2>
@@ -131,7 +129,6 @@ export default function MetricsPage() {
         </div>
       )}
 
-      {/* Status breakdown bar chart */}
       {data && statusData.length > 0 && (
         <div className="border border-border rounded-lg p-4 bg-card">
           <h2 className="text-sm font-medium mb-4">Jobs by status</h2>

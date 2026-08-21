@@ -54,11 +54,13 @@ export default function QueuesPage() {
         <h1 className="text-lg font-semibold">Queues</h1>
         {projectId && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="bg-amber-500 hover:bg-amber-400 text-black gap-1.5">
-                <Plus size={14} weight="bold" /> New queue
-              </Button>
-            </DialogTrigger>
+            <DialogTrigger
+              render={
+                <Button size="sm" className="bg-amber-500 hover:bg-amber-400 text-black gap-1.5">
+                  <Plus size={14} weight="bold" /> New queue
+                </Button>
+              }
+            />
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create queue</DialogTitle>

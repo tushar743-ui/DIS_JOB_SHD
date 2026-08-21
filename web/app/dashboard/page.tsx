@@ -60,7 +60,6 @@ export default function OverviewPage() {
         </button>
       </div>
 
-      {/* KPI row */}
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
@@ -100,7 +99,6 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {/* Queue breakdown */}
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide text-[11px]">
           Queues

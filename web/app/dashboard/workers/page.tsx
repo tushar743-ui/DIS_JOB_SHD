@@ -42,7 +42,6 @@ export default function WorkersPage() {
         </button>
       </div>
 
-      {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: "Active", count: active.length, color: "text-emerald-400" },
