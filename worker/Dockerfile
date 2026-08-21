@@ -1,0 +1,13 @@
+FROM golang:1.25-alpine AS builder
+WORKDIR /src
+COPY go.work go.work.sum* ./
+COPY api/go.mod api/go.sum ./api/
+COPY worker/go.mod worker/go.sum ./worker/
+RUN cd worker && go mod download
+COPY api ./api
+COPY worker ./worker
+RUN cd worker && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/worker ./cmd/worker
+
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /bin/worker /worker
+ENTRYPOINT ["/worker"]
