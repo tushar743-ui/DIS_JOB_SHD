@@ -66,7 +66,7 @@ IN the coplete process we have keep in mind that we are a senior top level softw
 
 
 always use the skills in /home/tushar/Desktop/Dev/dis-Job-queue/.claude/skills
-and donot add comments in the code
+and donot add comments in the code (anywhere)
 
 tech stack -
 Frontend        Next.js 14 App Router · TypeScript · Tailwind · shadcn/ui · Recharts

@@ -15,18 +15,6 @@ import (
 	"github.com/tushar/dis-job-queue/api/internal/router"
 )
 
-// @title           Distributed Job Queue API
-// @version         1.0
-// @description     Production-grade distributed job scheduling platform
-// @termsOfService  http://swagger.io/terms/
-// @contact.name    API Support
-// @contact.email   support@disjobqueue.io
-// @license.name    MIT
-// @host            localhost:8080
-// @BasePath        /api/v1
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	if os.Getenv("ENV") == "development" {

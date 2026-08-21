@@ -13,7 +13,6 @@ import (
 	"github.com/tushar/dis-job-queue/worker/internal/config"
 )
 
-// Job represents a claimed job ready for execution.
 type Job struct {
 	ID             string
 	QueueID        string
@@ -27,17 +26,15 @@ type Job struct {
 }
 
 type RetryPolicy struct {
-	Strategy       string  // fixed | linear | exponential
+	Strategy       string
 	MaxAttempts    int
 	InitialDelayMs int
 	MaxDelayMs     int
 	Multiplier     float64
 }
 
-// Handler is a function that processes a job payload.
 type Handler func(ctx context.Context, job *Job) error
 
-// Executor runs jobs concurrently with a semaphore.
 type Executor struct {
 	db       *pgxpool.Pool
 	rdb      *redis.Client
@@ -60,14 +57,12 @@ func New(db *pgxpool.Pool, rdb *redis.Client, workerID string, cfg *config.Confi
 	}
 }
 
-// Register adds a handler for a job type. Workers typically register handlers at startup.
 func (e *Executor) Register(jobType string, h Handler) {
 	e.mu.Lock()
 	e.handlers[jobType] = h
 	e.mu.Unlock()
 }
 
-// Submit dispatches a job for async execution.
 func (e *Executor) Submit(job *Job) {
 	e.sem <- struct{}{}
 	e.wg.Add(1)
@@ -80,10 +75,8 @@ func (e *Executor) Submit(job *Job) {
 	}()
 }
 
-// SemChan exposes the semaphore so the poller can check free capacity.
 func (e *Executor) SemChan() chan struct{} { return e.sem }
 
-// Drain waits for all running jobs to finish (or ctx to expire).
 func (e *Executor) Drain(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {
@@ -159,14 +152,12 @@ func (e *Executor) handleSuccess(ctx context.Context, job *Job, execID string, d
 		`UPDATE job_executions SET status='completed', completed_at=now(), duration_ms=$1 WHERE id=$2`,
 		durationMs, execID)
 
-	// Handle recurring cron jobs — re-schedule next run
 	if job.CronExpression != nil {
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='scheduled', attempt_count=0, last_error=NULL,
 			  completed_at=now(), updated_at=now()
 			 WHERE id=$1`,
 			job.ID)
-		// next_run_at is updated by the scheduler loop
 	} else {
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='completed', completed_at=now(), updated_at=now(),
@@ -185,7 +176,6 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 
 	nextAttempt := job.AttemptCount + 1
 	if nextAttempt >= job.MaxAttempts {
-		// Move to DLQ
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='dead', last_error=$1, updated_at=now(), claimed_by=NULL WHERE id=$2`,
 			errMsg, job.ID)
@@ -195,7 +185,6 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 			job.ID, job.QueueID, errMsg, nextAttempt)
 		log.Warn().Str("job_id", job.ID).Str("error", errMsg).Msg("job moved to DLQ")
 	} else {
-		// Re-queue with backoff
 		delay := e.calcDelay(job, nextAttempt)
 		runAt := time.Now().Add(delay)
 		e.db.Exec(ctx,
@@ -209,7 +198,6 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 
 func (e *Executor) calcDelay(job *Job, attempt int) time.Duration {
 	if job.RetryPolicy == nil {
-		// Default exponential
 		delay := time.Second * time.Duration(1<<uint(attempt-1))
 		if delay > 5*time.Minute {
 			delay = 5 * time.Minute

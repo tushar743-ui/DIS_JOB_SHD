@@ -47,7 +47,6 @@ func RegisterWorker(ctx context.Context, pool *pgxpool.Pool, projectID string, c
 	hostname, _ := os.Hostname()
 	pid := os.Getpid()
 
-	// Parse hostname and PID
 	addrs, _ := net.LookupHost(hostname)
 	_ = addrs
 

@@ -66,7 +66,6 @@ func (h *WorkerHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch recent heartbeats
 	hbRows, _ := h.db.Query(r.Context(),
 		`SELECT heartbeat_at, jobs_running, jobs_completed FROM worker_heartbeats
 		 WHERE worker_id=$1 ORDER BY heartbeat_at DESC LIMIT 10`, workerID)

@@ -32,14 +32,6 @@ type registerRequest struct {
 	Name     string `json:"name"`
 }
 
-// Register godoc
-// @Summary      Register a new user
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        body body registerRequest true "Registration payload"
-// @Success      201 {object} map[string]string
-// @Router       /auth/register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -93,14 +85,6 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// Login godoc
-// @Summary      Login
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        body body loginRequest true "Credentials"
-// @Success      200 {object} map[string]string
-// @Router       /auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -162,7 +146,6 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rotate
 	h.db.Exec(r.Context(), `UPDATE refresh_tokens SET revoked_at=now() WHERE token_hash=$1`, th)
 
 	token, newRefresh, err := h.generateTokens(userID, email)

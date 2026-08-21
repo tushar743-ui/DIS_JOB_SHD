@@ -19,7 +19,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.CORS)
-	r.Use(middleware.RateLimiter(rdb, 200, 60*1_000_000_000)) // 200 req/min per IP
+	r.Use(middleware.RateLimiter(rdb, 200, 60*1_000_000_000))
 
 	authH := handler.NewAuthHandler(pool, cfg)
 	orgH := handler.NewOrgHandler(pool)
@@ -36,19 +36,16 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Public
 		r.Post("/auth/register", authH.Register)
 		r.Post("/auth/login", authH.Login)
 		r.Post("/auth/refresh", authH.Refresh)
 
-		// Protected
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(cfg.JWTSecret))
 
 			r.Post("/auth/logout", authH.Logout)
 			r.Get("/auth/me", authH.Me)
 
-			// Organizations
 			r.Get("/orgs", orgH.List)
 			r.Post("/orgs", orgH.Create)
 			r.Get("/orgs/{orgID}", orgH.Get)
@@ -58,7 +55,6 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Post("/orgs/{orgID}/members", orgH.AddMember)
 			r.Delete("/orgs/{orgID}/members/{userID}", orgH.RemoveMember)
 
-			// Projects
 			r.Get("/orgs/{orgID}/projects", projectH.List)
 			r.Post("/orgs/{orgID}/projects", projectH.Create)
 			r.Get("/projects/{projectID}", projectH.Get)
@@ -66,11 +62,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Delete("/projects/{projectID}", projectH.Delete)
 			r.Post("/projects/{projectID}/rotate-key", projectH.RotateKey)
 
-			// Retry policies
 			r.Get("/projects/{projectID}/retry-policies", projectH.ListRetryPolicies)
 			r.Post("/projects/{projectID}/retry-policies", projectH.CreateRetryPolicy)
 
-			// Queues
 			r.Get("/projects/{projectID}/queues", queueH.List)
 			r.Post("/projects/{projectID}/queues", queueH.Create)
 			r.Get("/queues/{queueID}", queueH.Get)
@@ -80,7 +74,6 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Post("/queues/{queueID}/resume", queueH.Resume)
 			r.Get("/queues/{queueID}/stats", queueH.Stats)
 
-			// Jobs
 			r.Get("/queues/{queueID}/jobs", jobH.List)
 			r.Post("/queues/{queueID}/jobs", jobH.Create)
 			r.Post("/queues/{queueID}/jobs/batch", jobH.CreateBatch)
@@ -90,16 +83,13 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Get("/jobs/{jobID}/logs", jobH.Logs)
 			r.Get("/jobs/{jobID}/executions", jobH.Executions)
 
-			// Workers
 			r.Get("/projects/{projectID}/workers", workerH.List)
 			r.Get("/workers/{workerID}", workerH.Get)
 
-			// DLQ
 			r.Get("/queues/{queueID}/dlq", dlqH.List)
 			r.Post("/dlq/{dlqID}/retry", dlqH.Retry)
 			r.Delete("/dlq/{dlqID}", dlqH.Discard)
 
-			// Metrics
 			r.Get("/projects/{projectID}/metrics", metricsH.ProjectMetrics)
 			r.Get("/queues/{queueID}/metrics", metricsH.QueueMetrics)
 		})

@@ -13,7 +13,6 @@ import (
 	"github.com/tushar/dis-job-queue/worker/internal/executor"
 )
 
-// Poller polls the database for jobs and dispatches them to the executor.
 type Poller struct {
 	db       *pgxpool.Pool
 	rdb      *redis.Client
@@ -33,7 +32,6 @@ func New(db *pgxpool.Pool, rdb *redis.Client, exec *executor.Executor, workerID 
 	}
 }
 
-// ResolveQueueIDs looks up queue IDs by name for this project.
 func (p *Poller) ResolveQueueIDs(ctx context.Context) error {
 	rows, err := p.db.Query(ctx,
 		`SELECT id FROM queues WHERE project_id=$1 AND name=ANY($2) AND paused=false`,
@@ -52,9 +50,7 @@ func (p *Poller) ResolveQueueIDs(ctx context.Context) error {
 	return nil
 }
 
-// Run is the main polling loop.
 func (p *Poller) Run(ctx context.Context) {
-	// Resolve queue IDs first
 	if err := p.ResolveQueueIDs(ctx); err != nil {
 		log.Error().Err(err).Msg("failed to resolve queue IDs")
 	}
@@ -72,20 +68,17 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 }
 
-// poll atomically claims available jobs using SELECT ... FOR UPDATE SKIP LOCKED
 func (p *Poller) poll(ctx context.Context) {
 	if len(p.queueIDs) == 0 {
 		p.ResolveQueueIDs(ctx)
 		return
 	}
 
-	// Determine how many slots are free
 	freeSlots := cap(p.sem()) - len(p.sem())
 	if freeSlots <= 0 {
 		return
 	}
 
-	// Atomic claim: SELECT FOR UPDATE SKIP LOCKED prevents double-claiming
 	rows, err := p.db.Query(ctx, `
 		UPDATE jobs SET
 		  status = 'claimed',
@@ -122,7 +115,6 @@ func (p *Poller) poll(ctx context.Context) {
 		job.Payload = json.RawMessage(payloadBytes)
 		job.CronExpression = cronExpr
 
-		// Fetch retry policy from queue
 		job.RetryPolicy = p.fetchRetryPolicy(ctx, job.QueueID)
 
 		log.Debug().Str("job_id", job.ID).Str("type", job.Type).Msg("claimed job")
@@ -143,17 +135,10 @@ func (p *Poller) fetchRetryPolicy(ctx context.Context, queueID string) *executor
 	return &rp
 }
 
-// sem returns the executor's semaphore channel via reflection — workaround for unexported field.
-// In practice we'd expose a method; using a simple approach here.
 func (p *Poller) sem() chan struct{} {
-	// We need access to the executor's semaphore to know free capacity.
-	// The cleanest approach: expose a method on Executor.
 	return p.exec.SemChan()
 }
 
-// RunScheduler handles:
-// 1. Moving 'scheduled' jobs to 'queued' when their run_at arrives
-// 2. Computing next_run_at for cron jobs after completion
 func (p *Poller) RunScheduler(ctx context.Context) {
 	cronParser := cron.New(cron.WithSeconds())
 
@@ -165,12 +150,10 @@ func (p *Poller) RunScheduler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Promote scheduled → queued
 			p.db.Exec(ctx,
 				`UPDATE jobs SET status='queued', updated_at=now()
 				 WHERE status='scheduled' AND run_at <= now()`)
 
-			// Schedule next cron run
 			rows, err := p.db.Query(ctx,
 				`SELECT id, cron_expression FROM jobs
 				 WHERE status IN ('completed','scheduled') AND cron_expression IS NOT NULL AND next_run_at IS NULL`)

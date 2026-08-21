@@ -66,7 +66,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, map[string]string{
 		"id":      projectID,
-		"api_key": apiKey, // shown once
+		"api_key": apiKey,
 		"slug":    slug,
 	})
 }
@@ -182,7 +182,6 @@ func (h *ProjectHandler) CreateRetryPolicy(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
-// ProjectFromContext retrieves project_id after verifying api_key (for worker auth)
 func ProjectIDFromAPIKey(ctx interface{ Value(any) any }) string {
 	v, _ := ctx.Value(middleware.ContextUserID).(string)
 	return v

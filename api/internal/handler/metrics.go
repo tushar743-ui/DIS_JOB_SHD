@@ -52,13 +52,11 @@ func (h *MetricsHandler) ProjectMetrics(w http.ResponseWriter, r *http.Request) 
 		result = append(result, v)
 	}
 
-	// Active workers
 	var activeWorkers int
 	h.db.QueryRow(r.Context(),
 		`SELECT COUNT(*) FROM workers WHERE project_id=$1 AND status='active'`, projectID,
 	).Scan(&activeWorkers)
 
-	// Throughput last 24h
 	var completed24h int
 	h.db.QueryRow(r.Context(),
 		`SELECT COUNT(*) FROM jobs WHERE queue_id IN (SELECT id FROM queues WHERE project_id=$1)
@@ -102,7 +100,6 @@ func (h *MetricsHandler) QueueMetrics(w http.ResponseWriter, r *http.Request) {
 		throughput = append(throughput, p)
 	}
 
-	// Avg execution time
 	var avgMs *float64
 	h.db.QueryRow(r.Context(),
 		`SELECT AVG(duration_ms) FROM job_executions je
