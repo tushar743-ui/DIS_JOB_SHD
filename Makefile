@@ -1,4 +1,4 @@
-.PHONY: all build build-api build-worker test lint migrate dev clean
+.PHONY: all build build-api build-worker test test-go test-web lint migrate dev clean
 
 all: build
 
@@ -12,8 +12,14 @@ build-worker:
 	cd worker && go build -o ../bin/worker ./cmd/worker
 
 
-test:
-	go test ./api/... ./worker/... -v -timeout 120s
+test: test-go test-web
+
+test-go:
+	cd api && go test ./... -timeout 120s
+	cd worker && go test ./... -timeout 120s
+
+test-web:
+	cd web && npm test
 
 test-integration:
 	go test ./api/... ./worker/... -v -timeout 120s -tags integration
