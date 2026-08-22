@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/api";
+import { auth, orgs, projects } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const setProject = useAuthStore((s) => s.setProject);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,6 +26,11 @@ export default function LoginPage() {
       setAuth(res.access_token, res.refresh_token, {
         id: res.user_id, email, name: res.name,
       });
+      const orgList = await orgs.list().catch(() => []);
+      if (orgList.length > 0) {
+        const projectList = await projects.list(orgList[0].id).catch(() => []);
+        if (projectList.length > 0) setProject(projectList[0].id, orgList[0].id);
+      }
       router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");

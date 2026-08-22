@@ -150,9 +150,14 @@ func (p *Poller) RunScheduler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// FOR UPDATE SKIP LOCKED prevents multiple workers from double-promoting
 			p.db.Exec(ctx,
 				`UPDATE jobs SET status='queued', updated_at=now()
-				 WHERE status='scheduled' AND run_at <= now()`)
+				 WHERE id IN (
+				   SELECT id FROM jobs
+				   WHERE status='scheduled' AND run_at <= now()
+				   FOR UPDATE SKIP LOCKED
+				 )`)
 
 			rows, err := p.db.Query(ctx,
 				`SELECT id, cron_expression FROM jobs

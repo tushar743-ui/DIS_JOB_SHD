@@ -86,7 +86,13 @@ func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int
-	h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM jobs WHERE queue_id=$1`, queueID).Scan(&total)
+	if status != "" {
+		h.db.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM jobs WHERE queue_id=$1 AND status=$2::job_status`, queueID, status,
+		).Scan(&total)
+	} else {
+		h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM jobs WHERE queue_id=$1`, queueID).Scan(&total)
+	}
 	writeJSON(w, http.StatusOK, paginated[jobRow]{Data: jobs, Total: total, Limit: limit, Offset: offset})
 }
 
@@ -152,6 +158,11 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.ScheduledAt, runAt, req.TimeoutSecs, req.CronExpression, req.IdempotencyKey, req.Tags,
 	).Scan(&jobID)
 	if err != nil {
+		// pgx returns pgx.ErrNoRows when ON CONFLICT DO NOTHING suppresses the INSERT
+		if err.Error() == "no rows in result set" {
+			writeError(w, http.StatusConflict, "duplicate idempotency_key")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to create job: "+err.Error())
 		return
 	}
@@ -200,15 +211,17 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 			req.Tags = []string{}
 		}
 		runAt := time.Now()
+		batchStatus := "queued"
 		if req.ScheduledAt != nil && req.ScheduledAt.After(time.Now()) {
 			runAt = *req.ScheduledAt
+			batchStatus = "scheduled"
 		}
 		var id string
 		if err := tx.QueryRow(r.Context(),
 			`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts,
 			  scheduled_at, run_at, timeout_secs, batch_id, idempotency_key, tags)
-			 VALUES ($1,$2,$3,'queued',$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-			queueID, req.Type, []byte(req.Payload), req.Priority, req.MaxAttempts,
+			 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+			queueID, req.Type, []byte(req.Payload), batchStatus, req.Priority, req.MaxAttempts,
 			req.ScheduledAt, runAt, req.TimeoutSecs, batchID, req.IdempotencyKey, req.Tags,
 		).Scan(&id); err == nil {
 			ids = append(ids, id)

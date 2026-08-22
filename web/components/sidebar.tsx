@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Gauge,
@@ -31,8 +31,14 @@ const NAV = [
 
 export function Sidebar() {
   const path = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { user, clear } = useAuthStore();
+
+  function signOut() {
+    clear();
+    router.push("/login");
+  }
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -82,7 +88,7 @@ export function Sidebar() {
           </div>
         )}
         <button
-          onClick={clear}
+          onClick={signOut}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
         >
           <SignOut size={16} />

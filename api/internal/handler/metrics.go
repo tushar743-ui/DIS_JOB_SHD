@@ -83,7 +83,7 @@ func (h *MetricsHandler) QueueMetrics(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT date_trunc('hour', completed_at) AS hr,
 		        COUNT(*) FILTER (WHERE status='completed') AS completed,
-		        COUNT(*) FILTER (WHERE status='failed') AS failed
+		        COUNT(*) FILTER (WHERE status IN ('dead','failed')) AS failed
 		 FROM jobs
 		 WHERE queue_id=$1 AND completed_at > now() - interval '24 hours'
 		 GROUP BY hr ORDER BY hr`, queueID)

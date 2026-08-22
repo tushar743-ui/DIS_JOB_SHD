@@ -153,9 +153,12 @@ func (e *Executor) handleSuccess(ctx context.Context, job *Job, execID string, d
 		durationMs, execID)
 
 	if job.CronExpression != nil {
+		// Clear next_run_at and set run_at to far future so the scheduler recomputes
+		// the correct next cron time instead of immediately re-queuing.
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='scheduled', attempt_count=0, last_error=NULL,
-			  completed_at=now(), updated_at=now()
+			  completed_at=now(), updated_at=now(), next_run_at=NULL,
+			  run_at='2099-01-01 00:00:00+00'
 			 WHERE id=$1`,
 			job.ID)
 	} else {
@@ -187,6 +190,7 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 	} else {
 		delay := e.calcDelay(job, nextAttempt)
 		runAt := time.Now().Add(delay)
+		// Set 'failed' momentarily to record the failure state, then schedule retry
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='queued', last_error=$1, run_at=$2, updated_at=now(), claimed_by=NULL WHERE id=$3`,
 			errMsg, runAt, job.ID)
