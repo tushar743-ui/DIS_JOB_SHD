@@ -1,5 +1,3 @@
-import type { JobStatus } from "./api";
-
 export const STATUS_COLOR: Record<string, string> = {
   queued:    "bg-amber-500/15 text-amber-400 border-amber-500/20",
   scheduled: "bg-purple-500/15 text-purple-400 border-purple-500/20",
@@ -30,7 +28,9 @@ export const STATUS_DOT: Record<string, string> = {
 
 export function fmtDuration(ms?: number | null): string {
   if (ms == null) return "–";
-  if (ms < 1000) return `${ms}ms`;
+  // Averages come back from the API as floats, so round rather than printing
+  // every digit of e.g. 30.402843601895736.
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
 }

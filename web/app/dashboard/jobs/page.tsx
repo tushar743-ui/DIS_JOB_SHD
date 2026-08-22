@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { jobs, queues, type Job, type Queue } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage } from "@/lib/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { fmtDate, fmtRelative, fmtDuration } from "@/lib/status";
+import { fmtRelative } from "@/lib/status";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -22,34 +24,42 @@ export default function JobsPage() {
   const [queueList, setQueueList] = useState<Queue[]>([]);
   const [selectedQueue, setSelectedQueue] = useState<string>("");
   const [status, setStatus] = useState("all");
-  const [jobList, setJobList] = useState<Job[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+
+  // Results carry the query they answer, so "is a fetch outstanding" is a
+  // comparison during render instead of a flag toggled from an effect.
+  const [result, setResult] = useState<{ key: string; data: Job[]; total: number } | null>(null);
+  const queryKey = `${selectedQueue}|${status}|${page}`;
+  const loading = Boolean(selectedQueue) && result?.key !== queryKey;
+  const jobList = result?.data ?? [];
+  const total = result?.total ?? 0;
 
   useEffect(() => {
     if (!projectId) return;
-    queues.list(projectId).then((q) => {
-      setQueueList(q);
-      if (q.length > 0) setSelectedQueue(q[0].id);
-    });
+    queues.list(projectId)
+      .then((q) => {
+        setQueueList(q);
+        if (q.length > 0) setSelectedQueue(q[0].id);
+      })
+      .catch((e) => setError(errMessage(e, "Failed to load queues")));
   }, [projectId]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     if (!selectedQueue) return;
-    setLoading(true);
-    try {
-      const res = await jobs.list(selectedQueue, {
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        status: status !== "all" ? status : undefined,
-      });
-      setJobList(res.data);
-      setTotal(res.total);
-    } finally {
-      setLoading(false);
-    }
+    const key = `${selectedQueue}|${status}|${page}`;
+    return jobs.list(selectedQueue, {
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+      status: status !== "all" ? status : undefined,
+    }).then(
+      (res) => { setResult({ key, data: res.data, total: res.total }); setError(""); },
+      (e) => {
+        setResult({ key, data: [], total: 0 });
+        setError(errMessage(e, "Failed to load jobs"));
+      }
+    );
   }, [selectedQueue, status, page]);
 
   useEffect(() => { load(); }, [load]);
@@ -103,6 +113,8 @@ export default function JobsPage() {
           className="w-64 font-mono text-sm"
         />
       </div>
+
+      <ErrorBanner message={error} />
 
       <div className="border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">

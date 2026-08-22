@@ -7,30 +7,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye, EyeSlash, Copy, Check } from "@phosphor-icons/react";
+import { Copy, Check } from "@phosphor-icons/react";
 
 export default function SettingsPage() {
   const { user, projectId, orgId, setProject } = useAuthStore();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [orgList, setOrgList] = useState<Org[]>([]);
   const [projectList, setProjectList] = useState<Project[]>([]);
-  const [selectedOrg, setSelectedOrg] = useState(orgId ?? "");
-  const [selectedProject, setSelectedProject] = useState(projectId ?? "");
-  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [orgsLoaded, setOrgsLoaded] = useState(false);
 
-  // Sync dropdowns after Zustand hydrates from localStorage
-  useEffect(() => {
-    if (orgId && !selectedOrg) setSelectedOrg(orgId);
-  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (projectId && !selectedProject) setSelectedProject(projectId);
-  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // null means "the user has not touched this dropdown", so the persisted
+  // selection shows through once Zustand finishes hydrating. Deriving it here
+  // avoids mirroring store state into an effect.
+  const [orgChoice, setOrgChoice] = useState<string | null>(null);
+  const [projectChoice, setProjectChoice] = useState<string | null>(null);
+  const selectedOrg = orgChoice ?? orgId ?? "";
+  const selectedProject = projectChoice ?? projectId ?? "";
+
+  const loading = Boolean(accessToken) && !orgsLoaded;
 
   // Wait for auth token before hitting the API (Zustand hydrates async)
   useEffect(() => {
-    if (!accessToken) { setLoading(false); return; }
-    orgs.list().then(setOrgList).catch(() => {}).finally(() => setLoading(false));
+    if (!accessToken) return;
+    orgs.list().then(setOrgList).catch(() => {}).finally(() => setOrgsLoaded(true));
   }, [accessToken]);
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function SettingsPage() {
                 <select
                   id="org"
                   value={selectedOrg}
-                  onChange={(e) => { setSelectedOrg(e.target.value); setSelectedProject(""); }}
+                  onChange={(e) => { setOrgChoice(e.target.value); setProjectChoice(""); }}
                   className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                 >
                   <option value="">Select organization</option>
@@ -97,7 +97,7 @@ export default function SettingsPage() {
                   <select
                     id="project"
                     value={selectedProject}
-                    onChange={(e) => setSelectedProject(e.target.value)}
+                    onChange={(e) => setProjectChoice(e.target.value)}
                     className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                   >
                     <option value="">Select project</option>

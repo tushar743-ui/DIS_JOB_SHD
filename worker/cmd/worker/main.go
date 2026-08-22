@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tushar/dis-job-queue/worker/internal/config"
@@ -42,6 +43,8 @@ func simulateFail(name string) executor.Handler {
 }
 
 func main() {
+	_ = godotenv.Load()
+
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	if os.Getenv("ENV") == "development" {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})

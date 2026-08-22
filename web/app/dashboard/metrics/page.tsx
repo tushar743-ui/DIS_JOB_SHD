@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, Legend,
+  ResponsiveContainer, BarChart, Bar,
 } from "recharts";
 import { metrics, queues, type QueueMetrics, type Queue } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage } from "@/lib/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtDuration } from "@/lib/status";
 import {
@@ -17,26 +19,34 @@ export default function MetricsPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const [queueList, setQueueList] = useState<Queue[]>([]);
   const [selectedQueue, setSelectedQueue] = useState<string>("");
-  const [data, setData] = useState<QueueMetrics | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Results carry the queue they describe, so "is a fetch outstanding" is a
+  // comparison during render instead of a flag toggled from an effect.
+  const [result, setResult] = useState<{ key: string; data: QueueMetrics | null } | null>(null);
+  const loading = Boolean(selectedQueue) && result?.key !== selectedQueue;
+  const data = result?.data ?? null;
 
   useEffect(() => {
     if (!projectId) return;
-    queues.list(projectId).then((q) => {
-      setQueueList(q);
-      if (q.length > 0) setSelectedQueue(q[0].id);
-    });
+    queues.list(projectId)
+      .then((q) => {
+        setQueueList(q);
+        if (q.length > 0) setSelectedQueue(q[0].id);
+      })
+      .catch((e) => setError(errMessage(e, "Failed to load queues")));
   }, [projectId]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     if (!selectedQueue) return;
-    setLoading(true);
-    try {
-      const m = await metrics.queue(selectedQueue);
-      setData(m);
-    } finally {
-      setLoading(false);
-    }
+    const key = selectedQueue;
+    return metrics.queue(selectedQueue).then(
+      (m) => { setResult({ key, data: m }); setError(""); },
+      (e) => {
+        setResult({ key, data: null });
+        setError(errMessage(e, "Failed to load metrics"));
+      }
+    );
   }, [selectedQueue]);
 
   useEffect(() => { load(); }, [load]);
@@ -66,6 +76,8 @@ export default function MetricsPage() {
           </SelectContent>
         </Select>
       </div>
+
+      <ErrorBanner message={error} />
 
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

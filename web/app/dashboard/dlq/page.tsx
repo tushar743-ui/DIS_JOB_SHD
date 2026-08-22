@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { dlq, queues, type DLQEntry, type Queue } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage, reportError } from "@/lib/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { fmtRelative, fmtDate } from "@/lib/status";
@@ -15,40 +17,55 @@ export default function DLQPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const [queueList, setQueueList] = useState<Queue[]>([]);
   const [selectedQueue, setSelectedQueue] = useState<string>("");
-  const [entries, setEntries] = useState<DLQEntry[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Results carry the queue they belong to, so "is a fetch outstanding" is a
+  // comparison during render instead of a flag toggled from an effect.
+  const [result, setResult] = useState<{ key: string; data: DLQEntry[]; total: number } | null>(null);
+  const loading = Boolean(selectedQueue) && result?.key !== selectedQueue;
+  const entries = result?.data ?? [];
+  const total = result?.total ?? 0;
 
   useEffect(() => {
     if (!projectId) return;
-    queues.list(projectId).then((q) => {
-      setQueueList(q);
-      if (q.length > 0) setSelectedQueue(q[0].id);
-    });
+    queues.list(projectId)
+      .then((q) => {
+        setQueueList(q);
+        if (q.length > 0) setSelectedQueue(q[0].id);
+      })
+      .catch((e) => setError(errMessage(e, "Failed to load queues")));
   }, [projectId]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     if (!selectedQueue) return;
-    setLoading(true);
-    try {
-      const res = await dlq.list(selectedQueue, { limit: 50 });
-      setEntries(res.data);
-      setTotal(res.total);
-    } finally {
-      setLoading(false);
-    }
+    const key = selectedQueue;
+    return dlq.list(selectedQueue, { limit: 50 }).then(
+      (res) => { setResult({ key, data: res.data, total: res.total }); setError(""); },
+      (e) => {
+        setResult({ key, data: [], total: 0 });
+        setError(errMessage(e, "Failed to load dead letter queue"));
+      }
+    );
   }, [selectedQueue]);
 
   useEffect(() => { load(); }, [load]);
 
   async function retry(id: string) {
-    await dlq.retry(id);
+    try {
+      await dlq.retry(id);
+    } catch (e) {
+      reportError(e, "Failed to retry job");
+    }
     load();
   }
 
   async function discard(id: string) {
     if (!confirm("Permanently discard this job?")) return;
-    await dlq.discard(id);
+    try {
+      await dlq.discard(id);
+    } catch (e) {
+      reportError(e, "Failed to discard job");
+    }
     load();
   }
 
@@ -77,6 +94,8 @@ export default function DLQPage() {
           </button>
         </div>
       </div>
+
+      <ErrorBanner message={error} />
 
       {loading ? (
         <div className="space-y-2">

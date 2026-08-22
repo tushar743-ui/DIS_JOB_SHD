@@ -4,7 +4,9 @@ import { useEffect, useState, useCallback } from "react";
 import { workers, type Worker } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorBanner } from "@/components/error-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { errMessage } from "@/lib/errors";
 import { fmtRelative } from "@/lib/status";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 
@@ -12,15 +14,16 @@ export default function WorkersPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const [list, setList] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  // State lands in the promise callbacks rather than an async try/catch so the
+  // effect below can never trigger a synchronous re-render.
+  const load = useCallback(() => {
     if (!projectId) return;
-    try {
-      const data = await workers.list(projectId);
-      setList(data);
-    } finally {
-      setLoading(false);
-    }
+    return workers.list(projectId).then(
+      (data) => { setList(data); setError(""); setLoading(false); },
+      (e) => { setError(errMessage(e, "Failed to load workers")); setLoading(false); }
+    );
   }, [projectId]);
 
   useEffect(() => {
@@ -41,6 +44,8 @@ export default function WorkersPage() {
           <ArrowCounterClockwise size={16} />
         </button>
       </div>
+
+      <ErrorBanner message={error} />
 
       <div className="grid grid-cols-3 gap-4">
         {[

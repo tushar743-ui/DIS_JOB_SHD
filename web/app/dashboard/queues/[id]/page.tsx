@@ -8,6 +8,8 @@ import {
   type Queue, type Job, type DLQEntry, type QueueStats,
 } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage, reportError } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,22 +24,27 @@ export default function QueueDetailPage() {
   const [dlqList, setDlqList] = useState<DLQEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    try {
-      const [q, s, j, d] = await Promise.all([
-        queues.get(id),
-        queues.stats(id),
-        jobs.list(id, { limit: 50 }),
-        dlq.list(id, { limit: 20 }),
-      ]);
-      setQueue(q);
-      setStats(s);
-      setJobList(j.data);
-      setDlqList(d.data);
-    } finally {
-      setLoading(false);
-    }
+  // State lands in the promise callbacks rather than an async try/catch so the
+  // effect below can never trigger a synchronous re-render.
+  const load = useCallback(() => {
+    return Promise.all([
+      queues.get(id),
+      queues.stats(id),
+      jobs.list(id, { limit: 50 }),
+      dlq.list(id, { limit: 20 }),
+    ]).then(
+      ([q, s, j, d]) => {
+        setQueue(q);
+        setStats(s);
+        setJobList(j.data);
+        setDlqList(d.data);
+        setError("");
+        setLoading(false);
+      },
+      (e) => { setError(errMessage(e, "Failed to load queue")); setLoading(false); }
+    );
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -50,19 +57,29 @@ export default function QueueDetailPage() {
       else await queues.pause(id);
       const q = await queues.get(id);
       setQueue(q);
+    } catch (e) {
+      reportError(e, queue.paused ? "Failed to resume queue" : "Failed to pause queue");
     } finally {
       setActing(false);
     }
   }
 
   async function retryDLQ(entryId: string) {
-    await dlq.retry(entryId);
+    try {
+      await dlq.retry(entryId);
+    } catch (e) {
+      reportError(e, "Failed to retry job");
+    }
     load();
   }
 
   async function discardDLQ(entryId: string) {
     if (!confirm("Permanently discard this job?")) return;
-    await dlq.discard(entryId);
+    try {
+      await dlq.discard(entryId);
+    } catch (e) {
+      reportError(e, "Failed to discard job");
+    }
     load();
   }
 
@@ -77,7 +94,11 @@ export default function QueueDetailPage() {
   );
 
   if (!queue) return (
-    <div className="p-6 text-center text-muted-foreground">Queue not found.</div>
+    <div className="p-6 max-w-5xl mx-auto space-y-4">
+      {error
+        ? <ErrorBanner message={error} />
+        : <p className="text-center text-muted-foreground">Queue not found.</p>}
+    </div>
   );
 
   const statCards = [

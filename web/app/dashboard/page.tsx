@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { metrics, type ProjectMetrics } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage } from "@/lib/errors";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtRelative } from "@/lib/status";
 import { ArrowCounterClockwise, Robot, CheckCircle, Stack } from "@phosphor-icons/react";
@@ -14,16 +16,14 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  // State lands in the promise callbacks rather than an async try/catch so the
+  // effect below can never trigger a synchronous re-render.
+  const load = useCallback(() => {
     if (!projectId) return;
-    try {
-      const m = await metrics.project(projectId);
-      setData(m);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load metrics");
-    } finally {
-      setLoading(false);
-    }
+    return metrics.project(projectId).then(
+      (m) => { setData(m); setError(""); setLoading(false); },
+      (e) => { setError(errMessage(e, "Failed to load metrics")); setLoading(false); }
+    );
   }, [projectId]);
 
   useEffect(() => {
@@ -93,11 +93,7 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {error && (
-        <div className="text-sm text-destructive bg-destructive/10 px-4 py-3 rounded-lg">
-          {error}
-        </div>
-      )}
+      <ErrorBanner message={error} />
 
       <div>
         <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide text-[11px]">

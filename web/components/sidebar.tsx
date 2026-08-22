@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -39,9 +39,14 @@ export function Sidebar() {
     clear();
     router.push("/login");
   }
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []);
+  // The server cannot know the resolved theme, so the toggle stays neutral
+  // until the client takes over. Reading it as an external store keeps that out
+  // of an effect, which would otherwise cause a second render pass on mount.
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   return (
     <aside className="flex flex-col w-56 shrink-0 border-r border-border bg-card min-h-dvh sticky top-0">

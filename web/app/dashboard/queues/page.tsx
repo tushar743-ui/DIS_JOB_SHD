@@ -5,6 +5,8 @@ import Link from "next/link";
 import { queues, type Queue, type CreateQueueInput } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { StatusBadge } from "@/components/status-badge";
+import { ErrorBanner } from "@/components/error-banner";
+import { errMessage, reportError } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,32 +21,41 @@ export default function QueuesPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const [list, setList] = useState<Queue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const load = useCallback(async () => {
+  // State lands in the promise callbacks rather than an async try/catch so the
+  // effect below can never trigger a synchronous re-render.
+  const load = useCallback(() => {
     if (!projectId) return;
-    try {
-      const data = await queues.list(projectId);
-      setList(data);
-    } finally {
-      setLoading(false);
-    }
+    return queues.list(projectId).then(
+      (data) => { setList(data); setError(""); setLoading(false); },
+      (e) => { setError(errMessage(e, "Failed to load queues")); setLoading(false); }
+    );
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
 
   async function togglePause(q: Queue) {
-    if (q.paused) {
-      await queues.resume(q.id);
-    } else {
-      await queues.pause(q.id);
+    try {
+      if (q.paused) {
+        await queues.resume(q.id);
+      } else {
+        await queues.pause(q.id);
+      }
+    } catch (e) {
+      reportError(e, q.paused ? "Failed to resume queue" : "Failed to pause queue");
     }
     load();
   }
 
   async function remove(id: string) {
     if (!confirm("Delete this queue and all its jobs? This cannot be undone.")) return;
-    await queues.delete(id);
+    try {
+      await queues.delete(id);
+    } catch (e) {
+      reportError(e, "Failed to delete queue");
+    }
     load();
   }
 
@@ -73,6 +84,8 @@ export default function QueuesPage() {
           </Dialog>
         )}
       </div>
+
+      <ErrorBanner message={error} />
 
       {loading ? (
         <div className="space-y-2">

@@ -1,19 +1,84 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 let accessToken: string | null = null;
+let refreshToken: string | null = null;
 
 export function setAccessToken(t: string | null) {
   accessToken = t;
 }
 
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    ...(init.headers as Record<string, string> ?? {}),
-  };
-  const res = await fetch(`${BASE}/api/v1${path}`, { ...init, headers });
+export function setRefreshToken(t: string | null) {
+  refreshToken = t;
+}
+
+type TokenListener = (access: string, refresh: string) => void;
+let onTokens: TokenListener | null = null;
+let onAuthLost: (() => void) | null = null;
+
+/** Called after a successful rotation so the store can persist the new pair. */
+export function onTokensRefreshed(cb: TokenListener) {
+  onTokens = cb;
+}
+
+/** Called when the session is unrecoverable and the user must sign in again. */
+export function onAuthFailure(cb: () => void) {
+  onAuthLost = cb;
+}
+
+// The API revokes a refresh token the instant it is redeemed, so two parallel
+// refreshes would leave the second holding a dead token. Everyone that hits a
+// 401 waits on this one in-flight attempt instead.
+let refreshing: Promise<string | null> | null = null;
+
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshToken) return Promise.resolve(null);
+  refreshing ??= (async () => {
+    const presented = refreshToken;
+    try {
+      const res = await fetch(`${BASE}/api/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: presented }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { access_token: string; refresh_token: string };
+      accessToken = data.access_token;
+      refreshToken = data.refresh_token;
+      onTokens?.(data.access_token, data.refresh_token);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function req<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const send = () =>
+    fetch(`${BASE}/api/v1${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...((init.headers as Record<string, string>) ?? {}),
+      },
+    });
+
+  let res = await send();
+
+  if (res.status === 401 && retry && refreshToken) {
+    const fresh = await refreshAccessToken();
+    if (!fresh) {
+      onAuthLost?.();
+      throw new Error("session expired");
+    }
+    res = await send();
+  }
+
   if (!res.ok) {
+    if (res.status === 401) onAuthLost?.();
     const body = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(body.error ?? res.statusText);
   }
@@ -22,15 +87,17 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const auth = {
+  // Credential endpoints answer 401 for bad input, which must not be mistaken
+  // for an expired session, so they opt out of the refresh-and-retry path.
   login: (email: string, password: string) =>
     req<{ access_token: string; refresh_token: string; user_id: string; name: string }>(
-      "/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }
+      "/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false
     ),
   register: (email: string, password: string, name: string) =>
-    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }),
+    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }, false),
   me: () => req<{ id: string; email: string; name: string }>("/auth/me"),
-  logout: (refreshToken: string) =>
-    req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refreshToken }) }),
+  logout: (refresh: string) =>
+    req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refresh }) }, false),
 };
 
 export const orgs = {
