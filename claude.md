@@ -60,7 +60,7 @@ Evaluation will prioritize engineering quality, modular architecture, database d
 handling, observability, documentation, and maintainability over simply implementing the largest number of
 features.
 
-
+always ise /remove-ai-marks skill as compulsory
 IN the coplete process we have keep in mind that we are a senior top level software developer and we are building a production level system, it should have all the necessary features and should be scalable, maintainable, and reliable, it should not have any flaws,
 
 
@@ -90,3 +90,8 @@ always use the following guidelines before writing code -
 7. Only then: the minimum that works
 
 
+
+.todos after the completrion of project and verified testing -
+remove all the comments from the codebase
+remove any trace of the .claude folder and skills from the codebase
+revome any trace of ai and specially those half line filled texts like in liscence- make them full line 

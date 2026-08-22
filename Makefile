@@ -25,10 +25,10 @@ lint:
 
 
 migrate-up:
-	migrate -path db/migrations -database "$(DATABASE_URL)" up
+	$(HOME)/.local/bin/migrate -path db/migrations -database "$(DATABASE_URL)" up
 
 migrate-down:
-	migrate -path db/migrations -database "$(DATABASE_URL)" down 1
+	$(HOME)/.local/bin/migrate -path db/migrations -database "$(DATABASE_URL)" down 1
 
 
 dev:

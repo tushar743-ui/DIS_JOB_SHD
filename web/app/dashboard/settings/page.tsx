@@ -11,6 +11,7 @@ import { Eye, EyeSlash, Copy, Check } from "@phosphor-icons/react";
 
 export default function SettingsPage() {
   const { user, projectId, orgId, setProject } = useAuthStore();
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [orgList, setOrgList] = useState<Org[]>([]);
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [selectedOrg, setSelectedOrg] = useState(orgId ?? "");
@@ -18,14 +19,24 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // Sync dropdowns after Zustand hydrates from localStorage
   useEffect(() => {
-    orgs.list().then(setOrgList).finally(() => setLoading(false));
-  }, []);
+    if (orgId && !selectedOrg) setSelectedOrg(orgId);
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (projectId && !selectedProject) setSelectedProject(projectId);
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wait for auth token before hitting the API (Zustand hydrates async)
+  useEffect(() => {
+    if (!accessToken) { setLoading(false); return; }
+    orgs.list().then(setOrgList).catch(() => {}).finally(() => setLoading(false));
+  }, [accessToken]);
 
   useEffect(() => {
-    if (!selectedOrg) return;
-    projects.list(selectedOrg).then(setProjectList);
-  }, [selectedOrg]);
+    if (!selectedOrg || !accessToken) return;
+    projects.list(selectedOrg).then(setProjectList).catch(() => {});
+  }, [selectedOrg, accessToken]);
 
   function save() {
     if (selectedOrg && selectedProject) {

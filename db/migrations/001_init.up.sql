@@ -1,9 +1,6 @@
--- Enable UUID generation
+
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ──────────────────────────────────────────────────────────────────
--- AUTH / IAM
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE users (
     id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT        NOT NULL UNIQUE,
@@ -29,23 +26,19 @@ CREATE TABLE organization_members (
     PRIMARY KEY (org_id, user_id)
 );
 
--- ──────────────────────────────────────────────────────────────────
--- PROJECTS
--- ──────────────────────────────────────────────────────────────────
+
 CREATE TABLE projects (
     id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id       UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name         TEXT        NOT NULL,
     slug         TEXT        NOT NULL,
-    api_key_hash TEXT        NOT NULL UNIQUE,   -- hashed project API key
+    api_key_hash TEXT        NOT NULL UNIQUE,   
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (org_id, slug)
 );
 
--- ──────────────────────────────────────────────────────────────────
--- RETRY POLICIES (own table so queues can share policies)
--- ──────────────────────────────────────────────────────────────────
+
 CREATE TABLE retry_policies (
     id                UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id        UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -54,13 +47,11 @@ CREATE TABLE retry_policies (
     max_attempts      INT     NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
     initial_delay_ms  INT     NOT NULL DEFAULT 1000,
     max_delay_ms      INT     NOT NULL DEFAULT 60000,
-    multiplier        NUMERIC(5,2) NOT NULL DEFAULT 2.0,   -- for exponential
+    multiplier        NUMERIC(5,2) NOT NULL DEFAULT 2.0,   
     UNIQUE (project_id, name)
 );
 
--- ──────────────────────────────────────────────────────────────────
--- QUEUES
--- ──────────────────────────────────────────────────────────────────
+
 CREATE TABLE queues (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id        UUID        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -75,9 +66,7 @@ CREATE TABLE queues (
     UNIQUE (project_id, name)
 );
 
--- ──────────────────────────────────────────────────────────────────
--- JOBS
--- ──────────────────────────────────────────────────────────────────
+
 CREATE TYPE job_status AS ENUM (
     'queued','scheduled','claimed','running','completed','failed','cancelled','dead'
 );
@@ -85,15 +74,15 @@ CREATE TYPE job_status AS ENUM (
 CREATE TABLE jobs (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     queue_id        UUID        NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
-    type            TEXT        NOT NULL,           -- handler/processor name
+    type            TEXT        NOT NULL,           
     payload         JSONB       NOT NULL DEFAULT '{}',
     status          job_status  NOT NULL DEFAULT 'queued',
     priority        INT         NOT NULL DEFAULT 5 CHECK (priority BETWEEN 1 AND 10),
     max_attempts    INT         NOT NULL DEFAULT 3,
     attempt_count   INT         NOT NULL DEFAULT 0,
     -- timing
-    scheduled_at    TIMESTAMPTZ,                    -- NULL = immediate
-    run_at          TIMESTAMPTZ NOT NULL DEFAULT now(), -- effective dispatch time
+    scheduled_at    TIMESTAMPTZ,                    
+    run_at          TIMESTAMPTZ NOT NULL DEFAULT now(), 
     timeout_secs    INT         NOT NULL DEFAULT 300,
     -- recurring
     cron_expression TEXT,

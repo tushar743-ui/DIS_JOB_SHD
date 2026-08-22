@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -32,9 +33,12 @@ export function Sidebar() {
   const path = usePathname();
   const { theme, setTheme } = useTheme();
   const { user, clear } = useAuthStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   return (
-    <aside className="flex flex-col w-56 shrink-0 border-r border-border bg-card h-screen sticky top-0">
+    <aside className="flex flex-col w-56 shrink-0 border-r border-border bg-card min-h-dvh sticky top-0">
       <div className="h-14 px-4 flex items-center border-b border-border gap-2">
         <span className="w-7 h-7 rounded-md bg-amber-500 flex items-center justify-center text-black font-bold text-sm font-mono">
           DJQ
@@ -68,8 +72,8 @@ export function Sidebar() {
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         >
-          {theme === "dark" ? <Sun size={16} /> : <MoonStars size={16} />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
+          {mounted && (theme === "dark" ? <Sun size={16} /> : <MoonStars size={16} />)}
+          {mounted ? (theme === "dark" ? "Light mode" : "Dark mode") : "Theme"}
         </button>
         {user && (
           <div className="px-3 py-2">
