@@ -1,10 +1,18 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  Clock, CalendarClock, Loader, CheckCircle2, XCircle,
-  RotateCcw, Ban, Skull, HelpCircle, type LucideIcon,
-} from "lucide-react";
+// Per-icon imports, not the package barrel: the root export pulls ~1500 icon
+// modules. This is the import pattern Next's own docs prescribe for this package.
+import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
+import { CalendarDotsIcon } from "@phosphor-icons/react/dist/csr/CalendarDots";
+import { CircleNotchIcon } from "@phosphor-icons/react/dist/csr/CircleNotch";
+import { CheckCircleIcon } from "@phosphor-icons/react/dist/csr/CheckCircle";
+import { XCircleIcon } from "@phosphor-icons/react/dist/csr/XCircle";
+import { ArrowsClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
+import { ProhibitIcon } from "@phosphor-icons/react/dist/csr/Prohibit";
+import { WarningOctagonIcon } from "@phosphor-icons/react/dist/csr/WarningOctagon";
+import { QuestionIcon } from "@phosphor-icons/react/dist/csr/Question";
+import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react/dist/lib/types";
 import { cn } from "@/lib/utils";
 
 export type JobState =
@@ -14,23 +22,31 @@ export type JobState =
 interface StateSpec {
   label: string;
   token: string;
-  Icon: LucideIcon;
+  Icon: PhosphorIcon;
+  weight: IconWeight;
 }
 
 export const STATE_SPEC: Record<string, StateSpec> = {
-  queued: { label: "Queued", token: "--state-queued", Icon: Clock },
-  scheduled: { label: "Scheduled", token: "--state-scheduled", Icon: CalendarClock },
-  claimed: { label: "Claimed", token: "--state-running", Icon: Loader },
-  running: { label: "Running", token: "--state-running", Icon: Loader },
-  completed: { label: "Completed", token: "--state-completed", Icon: CheckCircle2 },
-  failed: { label: "Failed", token: "--state-failed", Icon: XCircle },
-  retrying: { label: "Retrying", token: "--state-retrying", Icon: RotateCcw },
-  cancelled: { label: "Cancelled", token: "--state-cancelled", Icon: Ban },
-  dead: { label: "Dead", token: "--state-dlq", Icon: Skull },
+  queued: { label: "Queued", token: "--state-queued", Icon: ClockIcon, weight: "fill" },
+  scheduled: { label: "Scheduled", token: "--state-scheduled", Icon: CalendarDotsIcon, weight: "fill" },
+  claimed: { label: "Claimed", token: "--state-running", Icon: CircleNotchIcon, weight: "bold" },
+  running: { label: "Running", token: "--state-running", Icon: CircleNotchIcon, weight: "bold" },
+  completed: { label: "Completed", token: "--state-completed", Icon: CheckCircleIcon, weight: "fill" },
+  failed: { label: "Failed", token: "--state-failed", Icon: XCircleIcon, weight: "fill" },
+  retrying: { label: "Retrying", token: "--state-retrying", Icon: ArrowsClockwiseIcon, weight: "bold" },
+  cancelled: { label: "Cancelled", token: "--state-cancelled", Icon: ProhibitIcon, weight: "fill" },
+  dead: { label: "Dead", token: "--state-dlq", Icon: WarningOctagonIcon, weight: "fill" },
 };
 
 export function stateSpec(state: string): StateSpec {
-  return STATE_SPEC[state] ?? { label: state || "Unknown", token: "--state-cancelled", Icon: HelpCircle };
+  return (
+    STATE_SPEC[state] ?? {
+      label: state || "Unknown",
+      token: "--state-cancelled",
+      Icon: QuestionIcon,
+      weight: "fill" as IconWeight,
+    }
+  );
 }
 
 export function StateDot({ state, className }: { state: string; className?: string }) {
@@ -51,7 +67,8 @@ export function StateDot({ state, className }: { state: string; className?: stri
 }
 
 export function JobStateBadge({ state, className }: { state: string; className?: string }) {
-  const { label, token, Icon } = stateSpec(state);
+  const { label, token, Icon, weight } = stateSpec(state);
+  const spinning = state === "running" || state === "claimed";
   return (
     <motion.span
       key={state}
@@ -62,12 +79,20 @@ export function JobStateBadge({ state, className }: { state: string; className?:
       aria-live="polite"
       aria-label={`State: ${label}`}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-l-2 bg-transparent px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium",
         className
       )}
-      style={{ borderLeftColor: `var(${token})`, color: `var(${token})` }}
+      style={{
+        color: `var(${token})`,
+        backgroundColor: `color-mix(in oklab, var(${token}) 12%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in oklab, var(${token}) 28%, transparent)`,
+      }}
     >
-      <Icon className={cn("size-3", state === "running" && "animate-spin")} aria-hidden="true" />
+      <Icon
+        className={cn("size-3.5 shrink-0", spinning && "animate-spin")}
+        weight={weight}
+        aria-hidden="true"
+      />
       {label}
     </motion.span>
   );

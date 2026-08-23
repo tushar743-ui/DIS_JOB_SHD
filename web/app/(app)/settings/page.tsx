@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Copy, Check } from "@phosphor-icons/react";
+import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 
 export default function SettingsPage() {
   const { user, projectId, orgId, setProject } = useAuthStore();
@@ -110,7 +111,7 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2">
                     <Input value={selectedProject} readOnly className="font-mono text-xs h-8" />
                     <button onClick={copyId} className="text-muted-foreground hover:text-foreground transition-colors p-1">
-                      {copied ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
+                      {copied ? <CheckIcon size={15} className="text-emerald-400" /> : <CopyIcon size={15} />}
                     </button>
                   </div>
                 </div>
