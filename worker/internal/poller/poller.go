@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
 	"github.com/tushar/dis-job-queue/worker/internal/config"
 	"github.com/tushar/dis-job-queue/worker/internal/executor"
@@ -140,8 +139,6 @@ func (p *Poller) sem() chan struct{} {
 }
 
 func (p *Poller) RunScheduler(ctx context.Context) {
-	cronParser := cron.New(cron.WithSeconds())
-
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -150,36 +147,88 @@ func (p *Poller) RunScheduler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// FOR UPDATE SKIP LOCKED prevents multiple workers from double-promoting
-			p.db.Exec(ctx,
-				`UPDATE jobs SET status='queued', updated_at=now()
-				 WHERE id IN (
-				   SELECT id FROM jobs
-				   WHERE status='scheduled' AND run_at <= now()
-				   FOR UPDATE SKIP LOCKED
-				 )`)
-
-			rows, err := p.db.Query(ctx,
-				`SELECT id, cron_expression FROM jobs
-				 WHERE status IN ('completed','scheduled') AND cron_expression IS NOT NULL AND next_run_at IS NULL`)
-			if err != nil {
-				continue
-			}
-			for rows.Next() {
-				var id, expr string
-				rows.Scan(&id, &expr)
-				sched, err := cronParser.AddFunc(expr, func() {})
-				if err != nil {
-					log.Warn().Str("job_id", id).Str("cron", expr).Msg("invalid cron expression")
-					continue
-				}
-				next := cronParser.Entry(sched).Next
-				cronParser.Remove(sched)
-				p.db.Exec(ctx,
-					`UPDATE jobs SET next_run_at=$1, run_at=$1, status='scheduled', updated_at=now() WHERE id=$2`,
-					next, id)
-			}
-			rows.Close()
+			p.promoteDueJobs(ctx)
+			p.scheduleCronJobs(ctx)
+			p.reclaimStuckJobs(ctx)
 		}
+	}
+}
+
+// promoteDueJobs moves scheduled jobs whose run_at has passed into the queue.
+func (p *Poller) promoteDueJobs(ctx context.Context) {
+	// FOR UPDATE SKIP LOCKED prevents multiple workers from double-promoting
+	if _, err := p.db.Exec(ctx,
+		`UPDATE jobs SET status='queued', updated_at=now()
+		 WHERE id IN (
+		   SELECT id FROM jobs
+		   WHERE status='scheduled' AND run_at <= now()
+		   FOR UPDATE SKIP LOCKED
+		 )`); err != nil {
+		log.Error().Err(err).Msg("failed to promote scheduled jobs")
+	}
+}
+
+// scheduleCronJobs gives every recurring job that has no pending run a next fire time.
+func (p *Poller) scheduleCronJobs(ctx context.Context) {
+	rows, err := p.db.Query(ctx,
+		`SELECT id, cron_expression FROM jobs
+		 WHERE status IN ('completed','scheduled') AND cron_expression IS NOT NULL AND next_run_at IS NULL
+		 FOR UPDATE SKIP LOCKED`)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to list cron jobs")
+		return
+	}
+
+	type pending struct{ id, expr string }
+	due := []pending{}
+	for rows.Next() {
+		var pj pending
+		if err := rows.Scan(&pj.id, &pj.expr); err != nil {
+			log.Error().Err(err).Msg("cron scan error")
+			continue
+		}
+		due = append(due, pj)
+	}
+	rows.Close()
+
+	now := time.Now()
+	for _, pj := range due {
+		next, err := executor.NextCronRun(pj.expr, now)
+		if err != nil {
+			log.Warn().Str("job_id", pj.id).Str("cron", pj.expr).Msg("invalid cron expression")
+			// Park it so the scheduler stops re-reading a job it can never schedule.
+			p.db.Exec(ctx,
+				`UPDATE jobs SET status='failed', last_error=$1, updated_at=now() WHERE id=$2`,
+				"invalid cron expression: "+pj.expr, pj.id)
+			continue
+		}
+		if _, err := p.db.Exec(ctx,
+			`UPDATE jobs SET next_run_at=$1, run_at=$1, status='scheduled', updated_at=now() WHERE id=$2`,
+			next, pj.id); err != nil {
+			log.Error().Err(err).Str("job_id", pj.id).Msg("failed to schedule next cron run")
+			continue
+		}
+		log.Debug().Str("job_id", pj.id).Time("next_run_at", next).Msg("cron job scheduled")
+	}
+}
+
+// reclaimStuckJobs re-queues jobs whose worker died between claiming and finishing.
+// A claim that never turned into a run is given a short grace period; a job that is
+// actually running gets its own timeout plus a minute before it is taken back.
+func (p *Poller) reclaimStuckJobs(ctx context.Context) {
+	tag, err := p.db.Exec(ctx,
+		`UPDATE jobs SET status='queued', claimed_by=NULL, claimed_at=NULL,
+		  run_at=now(), updated_at=now()
+		 WHERE claimed_at IS NOT NULL
+		   AND (
+		     (status='claimed' AND claimed_at < now() - interval '60 seconds')
+		     OR (status='running' AND claimed_at < now() - make_interval(secs => timeout_secs + 60))
+		   )`)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to reclaim stuck jobs")
+		return
+	}
+	if n := tag.RowsAffected(); n > 0 {
+		log.Warn().Int64("jobs", n).Msg("reclaimed stuck jobs")
 	}
 }

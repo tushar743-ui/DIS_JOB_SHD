@@ -97,7 +97,10 @@ func (e *Executor) run(job *Job) {
 
 	execID, err := e.startExecution(ctx, job)
 	if err != nil {
+		// The job is already marked 'claimed'; drop the claim so it is picked up
+		// again instead of sitting in 'claimed' forever.
 		log.Error().Err(err).Str("job_id", job.ID).Msg("failed to start execution record")
+		e.releaseClaim(job, err)
 		return
 	}
 
@@ -131,11 +134,16 @@ func (e *Executor) run(job *Job) {
 }
 
 func (e *Executor) startExecution(ctx context.Context, job *Job) (string, error) {
+	// attempt_number is derived from the executions already on record rather than
+	// from jobs.attempt_count: a retry (API or DLQ) resets attempt_count to 0, and
+	// reusing a number would collide with UNIQUE (job_id, attempt_number).
 	var execID string
 	err := e.db.QueryRow(ctx,
 		`INSERT INTO job_executions (job_id, worker_id, attempt_number, status)
-		 VALUES ($1,$2,$3,'running') RETURNING id`,
-		job.ID, e.workerID, job.AttemptCount+1,
+		 SELECT $1, $2, COALESCE(MAX(attempt_number), 0) + 1, 'running'
+		 FROM job_executions WHERE job_id = $1
+		 RETURNING id`,
+		job.ID, e.workerID,
 	).Scan(&execID)
 	if err != nil {
 		return "", err
@@ -147,20 +155,41 @@ func (e *Executor) startExecution(ctx context.Context, job *Job) (string, error)
 	return execID, nil
 }
 
+// releaseClaim returns a job that could not be started to the queue.
+func (e *Executor) releaseClaim(job *Job, cause error) {
+	if _, err := e.db.Exec(context.Background(),
+		`UPDATE jobs SET status='queued', claimed_by=NULL, claimed_at=NULL,
+		  last_error=$1, run_at=now() + interval '5 seconds', updated_at=now()
+		 WHERE id=$2 AND status='claimed'`,
+		cause.Error(), job.ID); err != nil {
+		log.Error().Err(err).Str("job_id", job.ID).Msg("failed to release claim")
+	}
+}
+
 func (e *Executor) handleSuccess(ctx context.Context, job *Job, execID string, durationMs int) {
 	e.db.Exec(ctx,
 		`UPDATE job_executions SET status='completed', completed_at=now(), duration_ms=$1 WHERE id=$2`,
 		durationMs, execID)
 
 	if job.CronExpression != nil {
-		// Clear next_run_at and set run_at to far future so the scheduler recomputes
-		// the correct next cron time instead of immediately re-queuing.
-		e.db.Exec(ctx,
-			`UPDATE jobs SET status='scheduled', attempt_count=0, last_error=NULL,
-			  completed_at=now(), updated_at=now(), next_run_at=NULL,
-			  run_at='2099-01-01 00:00:00+00'
-			 WHERE id=$1`,
-			job.ID)
+		// Compute the next fire time here so the job never shows a placeholder
+		// run_at between finishing and the scheduler's next tick.
+		next, cronErr := NextCronRun(*job.CronExpression, time.Now())
+		if cronErr != nil {
+			e.db.Exec(ctx,
+				`UPDATE jobs SET status='failed', last_error=$1, completed_at=now(),
+				  updated_at=now(), claimed_by=NULL WHERE id=$2`,
+				"invalid cron expression: "+*job.CronExpression, job.ID)
+			log.Warn().Str("job_id", job.ID).Str("cron", *job.CronExpression).
+				Msg("job completed but its cron expression is invalid")
+		} else {
+			e.db.Exec(ctx,
+				`UPDATE jobs SET status='scheduled', attempt_count=0, last_error=NULL,
+				  completed_at=now(), updated_at=now(), next_run_at=$1, run_at=$1,
+				  claimed_by=NULL
+				 WHERE id=$2`,
+				next, job.ID)
+		}
 	} else {
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='completed', completed_at=now(), updated_at=now(),
@@ -182,9 +211,17 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='dead', last_error=$1, updated_at=now(), claimed_by=NULL WHERE id=$2`,
 			errMsg, job.ID)
+		// A job can reach the DLQ more than once (retry -> fails again). Refresh the
+		// existing row and clear its resolution instead of dropping the new failure.
 		e.db.Exec(ctx,
 			`INSERT INTO dead_letter_queue (job_id, queue_id, final_error, attempts)
-			 VALUES ($1,$2,$3,$4) ON CONFLICT (job_id) DO NOTHING`,
+			 VALUES ($1,$2,$3,$4)
+			 ON CONFLICT (job_id) DO UPDATE SET
+			   final_error = EXCLUDED.final_error,
+			   attempts    = EXCLUDED.attempts,
+			   moved_at    = now(),
+			   resolved_at = NULL,
+			   resolved_by = NULL`,
 			job.ID, job.QueueID, errMsg, nextAttempt)
 		log.Warn().Str("job_id", job.ID).Str("error", errMsg).Msg("job moved to DLQ")
 	} else {

@@ -106,13 +106,13 @@ echo "=== 3. AUTH - TOKEN REFRESH ==="
 # Register a throwaway user and test refresh
 THROW_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/register" \
   -H "Content-Type: application/json" \
-  -d '{"email":"refresh_test@djq-test.io","password":"Refresh1234!","name":"Refresh Tester"}' 2>/dev/null)
+  -d '{"email":"refresh_test@djq-test.io","password":"Np5&zQwB8k","name":"Refresh Tester"}' 2>/dev/null)
 THROW_CODE=$(echo "$THROW_RESP" | tail -1)
 THROW_BODY=$(echo "$THROW_RESP" | head -n -1)
 if [ "$THROW_CODE" = "409" ]; then
   THROW_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/login" \
     -H "Content-Type: application/json" \
-    -d '{"email":"refresh_test@djq-test.io","password":"Refresh1234!"}' 2>/dev/null)
+    -d '{"email":"refresh_test@djq-test.io","password":"Np5&zQwB8k"}' 2>/dev/null)
   THROW_BODY=$(echo "$THROW_RESP" | head -n -1)
 fi
 THROW_REFRESH=$(jq_field "$THROW_BODY" ".refresh_token")

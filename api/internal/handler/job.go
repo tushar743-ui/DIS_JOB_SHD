@@ -147,15 +147,23 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = "scheduled"
 	}
 
+	// A recurring job with an explicit first run keeps that time: recording it as
+	// next_run_at stops the scheduler from overwriting it with the next cron tick.
+	var nextRunAt *time.Time
+	if status == "scheduled" && req.CronExpression != nil {
+		nextRunAt = &runAt
+	}
+
 	var jobID string
 	err := h.db.QueryRow(r.Context(),
 		`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts, scheduled_at, run_at,
-		  timeout_secs, cron_expression, idempotency_key, tags)
-		 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12)
+		  timeout_secs, cron_expression, idempotency_key, tags, next_run_at)
+		 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		 ON CONFLICT (idempotency_key) DO NOTHING
 		 RETURNING id`,
 		queueID, req.Type, []byte(req.Payload), status, req.Priority, req.MaxAttempts,
 		req.ScheduledAt, runAt, req.TimeoutSecs, req.CronExpression, req.IdempotencyKey, req.Tags,
+		nextRunAt,
 	).Scan(&jobID)
 	if err != nil {
 		// pgx returns pgx.ErrNoRows when ON CONFLICT DO NOTHING suppresses the INSERT
@@ -216,13 +224,19 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 			runAt = *req.ScheduledAt
 			batchStatus = "scheduled"
 		}
+		var nextRunAt *time.Time
+		if batchStatus == "scheduled" && req.CronExpression != nil {
+			nextRunAt = &runAt
+		}
 		var id string
 		if err := tx.QueryRow(r.Context(),
 			`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts,
-			  scheduled_at, run_at, timeout_secs, batch_id, idempotency_key, tags)
-			 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+			  scheduled_at, run_at, timeout_secs, batch_id, idempotency_key, tags,
+			  cron_expression, next_run_at)
+			 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
 			queueID, req.Type, []byte(req.Payload), batchStatus, req.Priority, req.MaxAttempts,
 			req.ScheduledAt, runAt, req.TimeoutSecs, batchID, req.IdempotencyKey, req.Tags,
+			req.CronExpression, nextRunAt,
 		).Scan(&id); err == nil {
 			ids = append(ids, id)
 		}

@@ -108,11 +108,13 @@ export default function JobExplorerPage() {
           />
         ),
         cell: ({ row }) => (
-          <Checkbox
-            aria-label={`Select job ${row.original.type}`}
-            checked={row.getIsSelected()}
-            onCheckedChange={(v) => row.toggleSelected(Boolean(v))}
-          />
+          <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+            <Checkbox
+              aria-label={`Select job ${row.original.type}`}
+              checked={row.getIsSelected()}
+              onCheckedChange={(v) => row.toggleSelected(Boolean(v))}
+            />
+          </div>
         ),
         size: 32,
       },

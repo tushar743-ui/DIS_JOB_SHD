@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 
 	// Register admin user and set up org/project/queue for shared use.
 	adminEmail := fmt.Sprintf("admin-%s@djq-test.io", testRunID)
-	body := mustJSON(map[string]any{"email": adminEmail, "password": "TestPass1234!", "name": "Test Admin"})
+	body := mustJSON(map[string]any{"email": adminEmail, "password": "Qz7#vLmR4t", "name": "Test Admin"})
 	resp := mustDo("POST", "/api/v1/auth/register", body, "")
 	var regResp map[string]string
 	mustDecode(resp, &regResp)
@@ -133,7 +133,7 @@ func newToken(t *testing.T) (token, userID string) {
 	t.Helper()
 	email := fmt.Sprintf("user-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
 	resp := mustDo("POST", "/api/v1/auth/register",
-		mustJSON(map[string]any{"email": email, "password": "TestPass1234!", "name": "Test User"}), "")
+		mustJSON(map[string]any{"email": email, "password": "Qz7#vLmR4t", "name": "Test User"}), "")
 	assertStatus(t, resp, http.StatusCreated)
 	var body map[string]string
 	mustDecode(resp, &body)
@@ -189,10 +189,10 @@ func TestAuth_Register_MissingFields(t *testing.T) {
 func TestAuth_Login(t *testing.T) {
 	email := fmt.Sprintf("login-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
 	mustDo("POST", "/api/v1/auth/register",
-		mustJSON(map[string]any{"email": email, "password": "LoginPass1!", "name": "Login User"}), "")
+		mustJSON(map[string]any{"email": email, "password": "Bk4$wNpX9d", "name": "Login User"}), "")
 
 	resp := mustDo("POST", "/api/v1/auth/login",
-		mustJSON(map[string]any{"email": email, "password": "LoginPass1!"}), "")
+		mustJSON(map[string]any{"email": email, "password": "Bk4$wNpX9d"}), "")
 	assertStatus(t, resp, http.StatusOK)
 	var body map[string]string
 	mustDecode(resp, &body)
@@ -214,7 +214,7 @@ func TestAuth_Login_WrongPassword(t *testing.T) {
 func TestAuth_RefreshToken_Rotation(t *testing.T) {
 	email := fmt.Sprintf("ref-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
 	regResp := mustDo("POST", "/api/v1/auth/register",
-		mustJSON(map[string]any{"email": email, "password": "RefPass1234!", "name": "Ref User"}), "")
+		mustJSON(map[string]any{"email": email, "password": "Hj6%tGvQ3s", "name": "Ref User"}), "")
 	assertStatus(t, regResp, http.StatusCreated)
 	var regBody map[string]string
 	mustDecode(regResp, &regBody)
@@ -316,7 +316,7 @@ func TestOrg_AddMember(t *testing.T) {
 
 	// register member with known email
 	mustDo("POST", "/api/v1/auth/register",
-		mustJSON(map[string]any{"email": memberEmail, "password": "MemberPass1!", "name": "Member"}), "")
+		mustJSON(map[string]any{"email": memberEmail, "password": "Cy8@rDkT5n", "name": "Member"}), "")
 
 	// create org as owner
 	orgResp := mustDo("POST", "/api/v1/orgs",

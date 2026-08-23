@@ -77,7 +77,15 @@ func (h *DLQHandler) Retry(w http.ResponseWriter, r *http.Request) {
 func (h *DLQHandler) Discard(w http.ResponseWriter, r *http.Request) {
 	dlqID := chi.URLParam(r, "dlqID")
 	userID := middleware.UserIDFromContext(r.Context())
-	h.db.Exec(r.Context(),
+	tag, err := h.db.Exec(r.Context(),
 		`UPDATE dead_letter_queue SET resolved_at=now(), resolved_by=$1 WHERE id=$2`, userID, dlqID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "DLQ entry not found")
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
