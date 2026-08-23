@@ -80,7 +80,7 @@ export function LifecycleTimeline({ job }: { job: Job }) {
   return (
     <ol className="relative">
       {steps.map((step, i) => {
-        const color = `hsl(var(${step.token}))`;
+        const color = `var(${step.token})`;
         const timestamp = step.durationOnly ? "" : fmtRelative(step.at);
         return (
           <motion.li

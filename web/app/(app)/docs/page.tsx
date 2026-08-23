@@ -93,8 +93,8 @@ function RouteRow({ route }: { route: Route }) {
         variant="outline"
         className="w-16 shrink-0 justify-center rounded-full font-mono text-[10px]"
         style={{
-          borderColor: `hsl(var(${METHOD_TOKEN[route.method]}) / 0.4)`,
-          color: `hsl(var(${METHOD_TOKEN[route.method]}))`,
+          borderColor: `color-mix(in oklab, var(${METHOD_TOKEN[route.method]}) 40%, transparent)`,
+          color: `var(${METHOD_TOKEN[route.method]})`,
         }}
       >
         {route.method}

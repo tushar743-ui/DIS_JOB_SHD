@@ -15,10 +15,10 @@ import { BlurFade } from "@/components/ui/blur-fade";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const RANGES = ["1H", "6H", "24H", "7D", "30D"];
-const AXIS = { fontSize: 10, fill: "hsl(var(--muted-foreground))" };
+const AXIS = { fontSize: 10, fill: "var(--muted-foreground)" };
 const TOOLTIP = {
-  background: "hsl(var(--popover))",
-  border: "1px solid hsl(var(--border))",
+  background: "var(--popover)",
+  border: "1px solid var(--border)",
   borderRadius: 12,
   fontSize: 12,
 };
@@ -110,14 +110,14 @@ export default function AnalyticsPage() {
             {depth.length === 0 ? <ChartSkeleton /> : (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={depth} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={false} minTickGap={24} />
                   <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} />
                   <RTooltip contentStyle={TOOLTIP} />
                   {queueNames.map((name, i) => (
                     <Line
                       key={name} type="monotone" dataKey={name} dot={false} strokeWidth={2}
-                      stroke={`hsl(var(${lineColors[i % lineColors.length]}))`}
+                      stroke={`var(${lineColors[i % lineColors.length]})`}
                     />
                   ))}
                 </LineChart>
@@ -129,11 +129,11 @@ export default function AnalyticsPage() {
             {utilization.length === 0 ? <ChartSkeleton /> : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={utilization} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="worker" tick={AXIS} tickLine={false} axisLine={false} interval={0} angle={-25} height={50} textAnchor="end" />
                   <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} unit="%" />
                   <RTooltip contentStyle={TOOLTIP} />
-                  <Bar dataKey="active" fill="hsl(var(--state-running))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="active" fill="var(--state-running)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -143,11 +143,11 @@ export default function AnalyticsPage() {
             {retryRate.length === 0 ? <ChartSkeleton /> : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={retryRate} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" horizontal={false} />
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} unit="%" />
                   <YAxis type="category" dataKey="kind" tick={AXIS} tickLine={false} axisLine={false} width={110} />
                   <RTooltip contentStyle={TOOLTIP} />
-                  <Bar dataKey="rate" fill="hsl(var(--state-retrying))" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="rate" fill="var(--state-retrying)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}

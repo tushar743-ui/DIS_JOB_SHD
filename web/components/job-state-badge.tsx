@@ -39,7 +39,7 @@ export function StateDot({ state, className }: { state: string; className?: stri
   return (
     <span
       className={cn("relative inline-flex size-2 shrink-0", className)}
-      style={{ color: `hsl(var(${token}))` }}
+      style={{ color: `var(${token})` }}
       aria-hidden="true"
     >
       {live && (
@@ -65,7 +65,7 @@ export function JobStateBadge({ state, className }: { state: string; className?:
         "inline-flex items-center gap-1.5 rounded-full border border-l-2 bg-transparent px-2.5 py-0.5 text-xs font-medium",
         className
       )}
-      style={{ borderLeftColor: `hsl(var(${token}))`, color: `hsl(var(${token}))` }}
+      style={{ borderLeftColor: `var(${token})`, color: `var(${token})` }}
     >
       <Icon className={cn("size-3", state === "running" && "animate-spin")} aria-hidden="true" />
       {label}

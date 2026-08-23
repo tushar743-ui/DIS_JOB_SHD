@@ -120,7 +120,7 @@ export default function QueueManagerPage() {
                       variant="outline"
                       role="status"
                       className="shrink-0 gap-1.5 rounded-full text-[10px]"
-                      style={{ borderColor: `hsl(var(${st.token}) / 0.4)`, color: `hsl(var(${st.token}))` }}
+                      style={{ borderColor: `color-mix(in oklab, var(${st.token}) 40%, transparent)`, color: `var(${st.token})` }}
                     >
                       <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
                       {st.label}
@@ -144,7 +144,7 @@ export default function QueueManagerPage() {
                       value={util}
                       aria-label={`Queue utilization ${util.toFixed(0)} percent`}
                       className="h-2"
-                      style={{ ["--progress-color" as string]: `hsl(var(${bar}))` }}
+                      style={{ ["--progress-color" as string]: `var(${bar})` }}
                     />
                   </div>
 

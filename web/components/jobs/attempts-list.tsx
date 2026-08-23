@@ -30,7 +30,7 @@ export function AttemptsList({ attempts }: { attempts: JobExecution[] }) {
           <li key={attempt.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
             <Icon
               className={`mt-0.5 size-4 shrink-0 ${live ? "animate-spin" : ""}`}
-              style={{ color: `hsl(var(${token}))` }}
+              style={{ color: `var(${token})` }}
               aria-hidden="true"
             />
 

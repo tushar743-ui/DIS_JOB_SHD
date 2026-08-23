@@ -44,7 +44,7 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
       gapDegrees = 2,
       gradient = true,
       strokeLinecap = "butt",
-      trackColor = "hsl(var(--border) / 0.5)",
+      trackColor = "color-mix(in oklab, var(--border) 50%, transparent)",
       activeLabel,
       onSegmentHover,
       ariaLabel,

@@ -107,7 +107,7 @@ export default function QueueDetailPage() {
           >
             <Card className="rounded-xl p-5">
               <p className="text-xs font-medium text-muted-foreground">{c.label}</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight" style={{ color: `hsl(var(${c.token}))` }}>
+              <p className="mt-2 text-2xl font-bold tabular-nums tracking-tight" style={{ color: `var(${c.token})` }}>
                 {c.value.toLocaleString()}
               </p>
             </Card>

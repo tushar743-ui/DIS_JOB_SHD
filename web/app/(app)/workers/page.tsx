@@ -88,7 +88,7 @@ export default function WorkerMonitorPage() {
                         role="status"
                         aria-live="polite"
                         className="inline-flex items-center gap-1.5 text-xs"
-                        style={{ color: `hsl(var(${token}))` }}
+                        style={{ color: `var(${token})` }}
                       >
                         <span className="relative flex size-1.5">
                           {!stale && mine > 0 && (

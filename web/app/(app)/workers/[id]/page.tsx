@@ -60,7 +60,7 @@ export default function WorkerDetailPage() {
             <span className="font-mono">{worker.hostname}</span>
             <Badge
               variant="outline" role="status" className="gap-1.5 rounded-full text-[10px]"
-              style={{ borderColor: `hsl(var(${token}) / 0.4)`, color: `hsl(var(${token}))` }}
+              style={{ borderColor: `color-mix(in oklab, var(${token}) 40%, transparent)`, color: `var(${token})` }}
             >
               <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
               {stale ? "DEAD" : "ACTIVE"}
@@ -127,11 +127,11 @@ export default function WorkerDetailPage() {
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={history} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} width={40} />
-                <RTooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }} />
-                <Bar dataKey="completed" fill="hsl(var(--state-completed))" radius={[4, 4, 0, 0]} />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={40} />
+                <RTooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} />
+                <Bar dataKey="completed" fill="var(--state-completed)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

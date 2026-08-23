@@ -65,10 +65,9 @@ export function AppSidebar() {
   }
 
   return (
-    <motion.aside
-      animate={{ width: collapsed ? 56 : 224 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      className="sticky top-0 z-30 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-lg"
+    <aside
+      style={{ width: collapsed ? 56 : 224 }}
+      className="sticky top-0 z-30 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-lg transition-[width] duration-200 ease-out"
     >
       <div className="flex h-14 items-center gap-2 border-b border-border px-3">
         <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary font-mono text-xs font-bold text-primary-foreground">
@@ -194,6 +193,6 @@ export function AppSidebar() {
           </div>
         )}
       </div>
-    </motion.aside>
+    </aside>
   );
 }

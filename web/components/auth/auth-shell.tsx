@@ -26,7 +26,7 @@ export function AuthShell({
 
       <div className="relative w-full max-w-[400px]">
         <div className="relative overflow-hidden rounded-xl border border-border bg-card p-8 shadow-xl">
-          <BorderBeam size={220} duration={10} colorFrom="hsl(var(--primary))" colorTo="transparent" />
+          <BorderBeam size={220} duration={10} colorFrom="var(--primary)" colorTo="transparent" />
 
           <div className="mb-6 text-center">
             <span className="mx-auto mb-4 grid size-10 place-items-center rounded-lg bg-primary font-mono text-sm font-bold text-primary-foreground">

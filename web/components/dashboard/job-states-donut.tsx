@@ -69,7 +69,7 @@ export function JobStatesDonut({ data, total }: { data: JobStateSlice[]; total: 
         animationDelayPerSegment={0.06}
         activeLabel={active?.label ?? null}
         onSegmentHover={handleSegmentHover}
-        trackColor="hsl(var(--border) / 0.35)"
+        trackColor="color-mix(in oklab, var(--border) 35%, transparent)"
         ariaLabel={`Job states: ${data.map((d) => `${d.label} ${d.value}`).join(", ")}`}
         centerContent={
           <AnimatePresence mode="wait">
