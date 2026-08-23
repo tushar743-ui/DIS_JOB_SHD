@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-// Reset the module between tests: api.ts keeps the tokens and the in-flight
-// refresh promise in module scope, so state would otherwise leak across cases.
 async function freshApi() {
   vi.resetModules();
   return import("./api");
@@ -16,7 +14,6 @@ function json(body: unknown, status = 200) {
   });
 }
 
-/** Installs a fetch stub and records every call it receives. */
 function stubFetch(handler: Handler) {
   const calls: { url: string; init: RequestInit }[] = [];
   const spy = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -99,7 +96,6 @@ describe("token refresh", () => {
     const result = await api.orgs.list();
 
     expect(result).toEqual([{ id: "q1" }]);
-    // original 401 -> refresh -> replay
     expect(calls.map((c) => c.url.split("/api/v1")[1])).toEqual([
       "/orgs",
       "/auth/refresh",
@@ -126,9 +122,6 @@ describe("token refresh", () => {
     expect(onTokens).toHaveBeenCalledWith("access-2", "refresh-2");
   });
 
-  // The server revokes a refresh token the moment it is redeemed. If each
-  // concurrent 401 started its own refresh, the first would win and the rest
-  // would present an already-dead token and log the user out.
   it("redeems the refresh token only once for concurrent 401s", async () => {
     const api = await freshApi();
     let refreshCount = 0;
@@ -138,7 +131,6 @@ describe("token refresh", () => {
         refreshCount += 1;
         const body = JSON.parse(String(init.body)) as { refresh_token: string };
         if (usedRefreshToken === body.refresh_token) {
-          // Mirrors the real API replaying a revoked token.
           return json({ error: "invalid or expired refresh token" }, 401);
         }
         usedRefreshToken = body.refresh_token;
@@ -150,7 +142,6 @@ describe("token refresh", () => {
     api.setAccessToken("access-1");
     api.setRefreshToken("refresh-1");
 
-    // Six pages loading at once, exactly like the dashboard on first paint.
     await Promise.all([
       api.orgs.list(),
       api.orgs.list(),
@@ -184,7 +175,6 @@ describe("token refresh", () => {
     api.setAccessToken("stale-again");
     await api.orgs.list();
 
-    // The single-flight latch must not stay stuck closed after it resolves.
     expect(refreshCount).toBe(2);
   });
 
@@ -202,7 +192,6 @@ describe("token refresh", () => {
 
     await expect(api.orgs.list()).rejects.toThrow("session expired");
     expect(onAuthLost).toHaveBeenCalledTimes(1);
-    // No pointless replay of the original request.
     expect(calls).toHaveLength(2);
   });
 
@@ -218,8 +207,6 @@ describe("token refresh", () => {
     expect(onAuthLost).toHaveBeenCalledTimes(1);
   });
 
-  // A 401 from these means "wrong credentials", not "expired session"; retrying
-  // them through the refresh path would be wrong.
   it("never refreshes on login or register", async () => {
     const api = await freshApi();
     const { calls } = stubFetch(() => json({ error: "invalid credentials" }, 401));
@@ -245,7 +232,6 @@ describe("token refresh", () => {
 
     await expect(api.orgs.list()).rejects.toThrow("invalid token");
 
-    // request -> refresh -> replay, then give up.
     expect(calls).toHaveLength(3);
     expect(onAuthLost).toHaveBeenCalledTimes(1);
   });

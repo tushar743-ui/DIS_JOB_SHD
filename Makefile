@@ -31,7 +31,6 @@ lint:
 	cd worker && go vet ./...
 
 
-# DATABASE_URL falls back to the value in .env, so these work with no exports.
 DATABASE_URL ?= $(shell sed -n "s/^DATABASE_URL=//p" .env 2>/dev/null | tr -d "'\"")
 MIGRATE ?= $(shell command -v migrate 2>/dev/null || echo $(HOME)/.local/bin/migrate)
 
@@ -42,12 +41,9 @@ migrate-down:
 	$(MIGRATE) -path db/migrations -database "$(DATABASE_URL)" down 1
 
 
-# One command, one terminal: API + worker + dashboard with tagged logs.
-# Ctrl-C stops everything. See ./scripts/dev.sh --help for flags.
 dev:
 	@exec ./scripts/dev.sh
 
-# Same, but rebuilds and restarts the Go services when .go files change.
 dev-watch:
 	@exec ./scripts/dev.sh --watch
 

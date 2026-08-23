@@ -38,8 +38,6 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "djq-auth",
       onRehydrateStorage: () => (state) => {
-        // Both halves must be restored: without the refresh token the client
-        // cannot renew a session that outlived the 15m access token.
         if (state?.accessToken) setAccessToken(state.accessToken);
         if (state?.refreshToken) setRefreshToken(state.refreshToken);
       },
@@ -47,14 +45,10 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
-// Persist rotated tokens so a reload picks up the newest pair rather than the
-// one that was already revoked server-side.
 onTokensRefreshed((access, refresh) => {
   useAuthStore.setState({ accessToken: access, refreshToken: refresh });
 });
 
-// Clearing the token is enough to move the user out: AuthGuard watches it and
-// routes to /login once the store no longer holds a session.
 onAuthFailure(() => {
   if (!useAuthStore.getState().accessToken) return;
   useAuthStore.getState().clear();

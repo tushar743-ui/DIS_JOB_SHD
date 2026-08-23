@@ -29,9 +29,6 @@ func NewPool(url string) (*pgxpool.Pool, error) {
 		return nil, err
 	}
 
-	// Serverless Postgres (Neon and friends) suspends when idle, and the connection
-	// that wakes it can take longer than a single ping timeout. Retry until the
-	// deadline instead of failing the whole process on a cold start.
 	var lastErr error
 	for attempt := 1; ; attempt++ {
 		pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)

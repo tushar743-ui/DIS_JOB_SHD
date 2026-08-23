@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-// The real toast module pulls in React and base-ui, which this node-environment
-// suite has no use for. Only the call matters here.
 const add = vi.fn();
 vi.mock("@/components/ui/toast", () => ({ toast: { add: (...args: unknown[]) => add(...args) } }));
 
@@ -27,8 +25,6 @@ describe("errMessage", () => {
     expect(errMessage(undefined, "Failed to load")).toBe("Failed to load");
   });
 
-  // A failed refresh already routes the user to /login, so showing a banner as
-  // well would just flash an error on the way out.
   it("returns empty for an expired session so nothing is rendered", async () => {
     const { errMessage } = await freshErrors();
     expect(errMessage(new Error("session expired"), "Failed to load")).toBe("");
@@ -54,7 +50,6 @@ describe("reportError", () => {
     expect(add).not.toHaveBeenCalled();
   });
 
-  // Polling screens can fail against the same dead backend every few seconds.
   it("suppresses an identical message inside the window", async () => {
     const { reportError } = await freshErrors();
     reportError(new Error("network down"), "Failed to load");

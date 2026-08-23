@@ -11,8 +11,6 @@ describe("fmtDuration", () => {
     expect(fmtDuration(999)).toBe("999ms");
   });
 
-  // The metrics endpoint returns avg_duration_ms as a float, which used to be
-  // interpolated raw and rendered as "30.402843601895736ms".
   it("rounds a fractional millisecond average", () => {
     expect(fmtDuration(30.402843601895736)).toBe("30ms");
     expect(fmtDuration(0.6)).toBe("1ms");
@@ -30,7 +28,6 @@ describe("fmtDuration", () => {
     expect(fmtDuration(undefined)).toBe("–");
   });
 
-  // Zero is a real measurement, not a missing one.
   it("does not confuse zero with absent", () => {
     expect(fmtDuration(0)).toBe("0ms");
   });
@@ -66,7 +63,6 @@ describe("fmtDate", () => {
 });
 
 describe("STATUS_COLOR", () => {
-  // Every status the API can return needs an entry, or the badge renders bare.
   it("covers every job and worker status", () => {
     const statuses = [
       "queued", "scheduled", "claimed", "running",

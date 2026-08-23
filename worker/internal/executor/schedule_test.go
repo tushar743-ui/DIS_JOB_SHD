@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// ─── NextCronRun unit tests (no DB) ──────────────────────────────────────────
-
 func TestNextCronRun_SixFieldWithSeconds(t *testing.T) {
 	from := time.Date(2026, 3, 1, 10, 0, 3, 0, time.UTC)
 	next, err := NextCronRun("*/10 * * * * *", from)

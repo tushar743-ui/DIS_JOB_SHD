@@ -6,20 +6,11 @@ import { DonutChart, type DonutChartSegment } from "@/components/ui/donut-chart"
 import { stateSpec } from "@/components/job-state-badge";
 import { cn } from "@/lib/utils";
 
-/**
- * Lifecycle order, not display order: a job walks down this list. Every status the
- * API can return appears here, so the ring always closes on itself.
- */
 const LIFECYCLE = [
   "queued", "scheduled", "claimed", "running",
   "retrying", "completed", "failed", "dead", "cancelled",
 ] as const;
 
-/**
- * Deeper, jewel-toned readings of the state hues. Each keeps its family from the
- * status badges (green completed, red failed) but sits richer on the ring, where
- * large areas of flat mid-tone look cheap. Amber matches the product accent.
- */
 const RING_COLOR: Record<string, string> = {
   queued: "hsl(258 90% 66%)",
   scheduled: "hsl(38 92% 50%)",
@@ -38,7 +29,6 @@ export interface JobStateSlice extends DonutChartSegment {
   state: string;
 }
 
-/** Turns a status→count map into ring segments covering every non-zero status. */
 export function buildJobStateSlices(totals: Record<string, number>): JobStateSlice[] {
   const known = new Set<string>(LIFECYCLE);
   const order = [...LIFECYCLE, ...Object.keys(totals).filter((s) => !known.has(s))];
@@ -56,7 +46,6 @@ export function buildJobStateSlices(totals: Record<string, number>): JobStateSli
 export function JobStatesDonut({ data, total }: { data: JobStateSlice[]; total: number }) {
   const [hoveredState, setHoveredState] = useState<string | null>(null);
 
-  // Stable identity: the DonutChart effect depends on this prop.
   const handleSegmentHover = useCallback(
     (segment: DonutChartSegment | null) =>
       setHoveredState((segment as JobStateSlice | null)?.state ?? null),

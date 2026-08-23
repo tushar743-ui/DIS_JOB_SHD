@@ -33,7 +33,6 @@ func TestMain(m *testing.M) {
 	}
 
 	cfg := config.Load()
-	// Increase pool size for concurrent worker tests
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse db url: %v\n", err)
@@ -44,7 +43,6 @@ func TestMain(m *testing.M) {
 	ctx0 := context.Background()
 	pool, err := pgxpool.NewWithConfig(ctx0, poolCfg)
 	if err != nil {
-		// fall back to standard pool
 		pool, err = workerdb.NewPool(cfg.DatabaseURL)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "db connect: %v\n", err)
@@ -54,7 +52,6 @@ func TestMain(m *testing.M) {
 	testPool = pool
 	testProjectID = cfg.ProjectID
 
-	// Resolve a queue ID for this project
 	ctx := context.Background()
 	var qid string
 	err = pool.QueryRow(ctx,
@@ -71,7 +68,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// insertJob inserts a job directly into DB and returns its ID.
 func insertJob(t *testing.T, jobType string, priority int) string {
 	t.Helper()
 	var id string
@@ -110,7 +106,6 @@ func workerHex() string {
 	return hex.EncodeToString(b)
 }
 
-// registerWorker creates a worker row and returns its ID.
 func registerWorker(t *testing.T, projectID string) string {
 	t.Helper()
 	var wid string
@@ -128,17 +123,10 @@ func registerWorker(t *testing.T, projectID string) string {
 	return wid
 }
 
-// ─── Priority ordering ────────────────────────────────────────────────────────
-
-// TestPriorityOrdering verifies that jobs with higher priority numbers are
-// claimed before lower-priority ones (ORDER BY priority DESC).
-// Uses concurrency=1 and an isolated queue so jobs are claimed one at a time
-// with no competing jobs from other tests.
 func TestPriorityOrdering(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Create an isolated queue for this test so no other jobs compete.
 	queueName := "prio_test_" + workerHex()
 	var isolatedQueueID string
 	err := testPool.QueryRow(ctx,
@@ -153,7 +141,6 @@ func TestPriorityOrdering(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM queues WHERE id=$1`, isolatedQueueID)
 	})
 
-	// Insert 5 jobs with distinct priorities in reverse insertion order to prove SQL ordering.
 	priorities := []int{1, 3, 5, 7, 9}
 	for _, prio := range priorities {
 		var id string
@@ -166,7 +153,6 @@ func TestPriorityOrdering(t *testing.T) {
 
 	workerID := registerWorker(t, testProjectID)
 
-	// concurrency=1 - poller claims one job per cycle, so SQL ORDER BY governs sequence.
 	exec := executor.New(testPool, nil, workerID, &config.Config{Concurrency: 1})
 
 	var mu sync.Mutex
@@ -224,10 +210,6 @@ func TestPriorityOrdering(t *testing.T) {
 	}
 }
 
-// ─── Skip-locked: no double-claim ────────────────────────────────────────────
-
-// TestSkipLocked verifies that two concurrent workers each claim distinct jobs
-// (FOR UPDATE SKIP LOCKED prevents double-claiming).
 func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -238,7 +220,7 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 		jobIDs[i] = insertJob(t, "skip_lock_test", 5)
 	}
 
-	var claimed sync.Map // jobID → workerID
+	var claimed sync.Map
 	var duplicates int32
 
 	workerCount := 5
@@ -273,7 +255,6 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 		}()
 	}
 
-	// Wait until all jobs are claimed or timeout
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
 		count := 0
@@ -295,13 +276,10 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 	t.Logf("skip-locked test: %d/%d jobs claimed with no duplicates", count, numJobs)
 }
 
-// ─── Scheduler: promotes scheduled jobs ──────────────────────────────────────
-
 func TestScheduler_PromotesScheduledJobs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Insert a job that is scheduled 1 second from now
 	var jobID string
 	runAt := time.Now().Add(1 * time.Second)
 	err := testPool.QueryRow(ctx,
@@ -316,12 +294,10 @@ func TestScheduler_PromotesScheduledJobs(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM jobs WHERE id=$1`, jobID)
 	})
 
-	// Verify it starts as 'scheduled'
 	if s := jobStatus(t, jobID); s != "scheduled" {
 		t.Fatalf("expected status=scheduled before promotion, got %s", s)
 	}
 
-	// Run the scheduler
 	cfg := &config.Config{
 		ProjectID:    testProjectID,
 		QueueNames:   []string{"default"},
@@ -336,7 +312,6 @@ func TestScheduler_PromotesScheduledJobs(t *testing.T) {
 	defer schedCancel()
 	go p.RunScheduler(schedCtx)
 
-	// Wait up to 8s for promotion (scheduler runs every 5s)
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		if s := jobStatus(t, jobID); s == "queued" {
@@ -348,13 +323,10 @@ func TestScheduler_PromotesScheduledJobs(t *testing.T) {
 	t.Errorf("job was not promoted from scheduled to queued within 8s (status=%s)", jobStatus(t, jobID))
 }
 
-// ─── Failure path: job moves to DLQ after max_attempts ───────────────────────
-
 func TestFailure_MovesToDLQ(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Insert a job with max_attempts=2 - our handler will always fail.
 	var jobID string
 	err := testPool.QueryRow(ctx,
 		`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts, run_at, timeout_secs)
@@ -387,7 +359,6 @@ func TestFailure_MovesToDLQ(t *testing.T) {
 	defer pollCancel()
 	go p.Run(pollCtx)
 
-	// Wait for the job to reach 'dead' status
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if s := jobStatus(t, jobID); s == "dead" {
@@ -401,7 +372,6 @@ func TestFailure_MovesToDLQ(t *testing.T) {
 		t.Fatalf("job should be 'dead' after exhausting max_attempts=2, got %s", finalStatus)
 	}
 
-	// Verify DLQ entry
 	var dlqCount int
 	testPool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM dead_letter_queue WHERE job_id=$1`, jobID,
@@ -412,13 +382,10 @@ func TestFailure_MovesToDLQ(t *testing.T) {
 	t.Log("job correctly moved to DLQ after exhausting retries")
 }
 
-// ─── Paused queue is skipped by poller ───────────────────────────────────────
-
 func TestPausedQueue_JobsNotClaimed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Pause the queue
 	testPool.Exec(ctx, `UPDATE queues SET paused=true WHERE id=$1`, testQueueID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `UPDATE queues SET paused=false WHERE id=$1`, testQueueID)
@@ -439,14 +406,12 @@ func TestPausedQueue_JobsNotClaimed(t *testing.T) {
 	})
 
 	p := poller.New(testPool, nil, exec, wid, cfg)
-	// ResolveQueueIDs excludes paused queues, so queueIDs will be empty
 	p.ResolveQueueIDs(ctx)
 
 	pollCtx, pollCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer pollCancel()
 	go p.Run(pollCtx)
 
-	// Wait 3s and verify job is still 'queued' (not claimed)
 	time.Sleep(3 * time.Second)
 	status := jobStatus(t, jobID)
 	if status != "queued" {
@@ -454,8 +419,6 @@ func TestPausedQueue_JobsNotClaimed(t *testing.T) {
 	}
 	t.Log("paused queue correctly prevents job claiming")
 }
-
-// ─── Load test: 20 concurrent workers, 200 jobs ──────────────────────────────
 
 func TestLoad_20Workers_200Jobs(t *testing.T) {
 	if testing.Short() {
@@ -465,8 +428,6 @@ func TestLoad_20Workers_200Jobs(t *testing.T) {
 	const numJobs = 200
 	const numWorkers = 20
 
-	// Workers share a parent context. Poll contexts are bounded to 50s so
-	// goroutines exit cleanly before the test timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
@@ -502,7 +463,7 @@ func TestLoad_20Workers_200Jobs(t *testing.T) {
 	var workerWG sync.WaitGroup
 	for w := 0; w < numWorkers; w++ {
 		wid := registerWorker(t, testProjectID)
-		concurrency := mrand.Intn(5) + 3 // 3–7
+		concurrency := mrand.Intn(5) + 3
 		cfg := &config.Config{
 			ProjectID:    testProjectID,
 			QueueNames:   []string{"default", "email", "notifications"},
@@ -528,7 +489,6 @@ func TestLoad_20Workers_200Jobs(t *testing.T) {
 		}()
 	}
 
-	// Poll until all jobs are in a terminal state
 	start := time.Now()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()

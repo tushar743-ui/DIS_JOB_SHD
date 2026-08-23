@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Comprehensive distributed job queue test suite
-# Creates 10 users, 20 workers, and validates all core workflows
 
 set -euo pipefail
 
@@ -50,12 +48,10 @@ echo " $(date)"
 echo "================================================================"
 echo ""
 
-# ─── 1. HEALTH CHECK ──────────────────────────────────────────────
 echo "=== 1. HEALTH CHECK ==="
 HEALTH=$(curl -sf "$BASE/health" 2>/dev/null || echo '{"ok":false}')
 if echo "$HEALTH" | grep -q '"ok":true'; then ok "API /health"; else fail "API /health" "unreachable"; exit 1; fi
 
-# ─── 2. AUTH - register 10 users ─────────────────────────────────
 echo ""
 echo "=== 2. USER REGISTRATION (10 users) ==="
 
@@ -73,7 +69,6 @@ for i in $(seq 1 10); do
   CODE=$(echo "$RESP" | tail -1)
   BODY=$(echo "$RESP" | head -n -1)
 
-  # If already registered, login instead
   if [ "$CODE" = "409" ]; then
     RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/login" \
       -H "Content-Type: application/json" \
@@ -95,15 +90,12 @@ for i in $(seq 1 10); do
   fi
 done
 
-# Pick primary user for org/project setup
 PRIMARY_EMAIL="${USER_EMAILS[0]}"
 PRIMARY_TOKEN="${USER_TOKENS[$PRIMARY_EMAIL]}"
 AUTH="Authorization: Bearer $PRIMARY_TOKEN"
 
-# ─── 3. TOKEN REFRESH ─────────────────────────────────────────────
 echo ""
 echo "=== 3. AUTH - TOKEN REFRESH ==="
-# Register a throwaway user and test refresh
 THROW_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email":"refresh_test@djq-test.io","password":"Np5&zQwB8k","name":"Refresh Tester"}' 2>/dev/null)
@@ -128,7 +120,6 @@ if [ -n "$THROW_REFRESH" ] && [ "$THROW_REFRESH" != "null" ]; then
   else
     fail "Token refresh" "body: $REF_BODY"
   fi
-  # Double-use same refresh token (should fail - replay protection)
   REF2_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/refresh" \
     -H "Content-Type: application/json" \
     -d "{\"refresh_token\":\"$THROW_REFRESH\"}" 2>/dev/null)
@@ -142,7 +133,6 @@ else
   fail "Token refresh setup" "no refresh token obtained"
 fi
 
-# ─── 4. /auth/me ─────────────────────────────────────────────────
 echo ""
 echo "=== 4. AUTH - GET /me ==="
 ME_RESP=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/auth/me" 2>/dev/null)
@@ -150,11 +140,9 @@ ME_CODE=$(echo "$ME_RESP" | tail -1)
 ME_BODY=$(echo "$ME_RESP" | head -n -1)
 assert_status "/auth/me" "200" "$ME_CODE" "$ME_BODY"
 
-# ─── 5. ORGANIZATIONS ────────────────────────────────────────────
 echo ""
 echo "=== 5. ORGANIZATIONS ==="
 
-# Create org
 ORG_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/orgs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"name":"DJQ Test Org","slug":"djq-test-org"}' 2>/dev/null)
@@ -162,7 +150,6 @@ ORG_CODE=$(echo "$ORG_RESP" | tail -1)
 ORG_BODY=$(echo "$ORG_RESP" | head -n -1)
 if [ "$ORG_CODE" = "201" ] || [ "$ORG_CODE" = "409" ]; then
   if [ "$ORG_CODE" = "409" ]; then
-    # Already exists, find it
     ORGS_RESP=$(curl -s -H "$AUTH" "$API/orgs" 2>/dev/null)
     ORG_ID=$(echo "$ORGS_RESP" | jq -r '[.[] | select(.slug=="djq-test-org")] | .[0].id' 2>/dev/null)
     ok "Org creation (already existed - reusing)"
@@ -181,24 +168,20 @@ if [ -z "$ORG_ID" ] || [ "$ORG_ID" = "null" ]; then
   warn "Fallback to first org: $ORG_ID"
 fi
 
-# List orgs
 LIST_ORGS=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/orgs" 2>/dev/null)
 LIST_CODE=$(echo "$LIST_ORGS" | tail -1)
 assert_status "List orgs" "200" "$LIST_CODE" "$(echo "$LIST_ORGS" | head -n -1)"
 
-# Get single org
 if [ -n "$ORG_ID" ] && [ "$ORG_ID" != "null" ]; then
   GET_ORG=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/orgs/$ORG_ID" 2>/dev/null)
   GET_CODE=$(echo "$GET_ORG" | tail -1)
   assert_status "Get org by ID" "200" "$GET_CODE" "$(echo "$GET_ORG" | head -n -1)"
 
-  # Update org
   UPD_ORG=$(curl -s -w "\n%{http_code}" -X PUT "$API/orgs/$ORG_ID" \
     -H "$AUTH" -H "Content-Type: application/json" \
     -d '{"name":"DJQ Test Org (Updated)"}' 2>/dev/null)
   assert_status "Update org" "200" "$(echo "$UPD_ORG" | tail -1)" "$(echo "$UPD_ORG" | head -n -1)"
 
-  # Add a member (user 2)
   UID2="${USER_IDS[${USER_EMAILS[1]}]:-}"
   if [ -n "$UID2" ] && [ "$UID2" != "null" ]; then
     MEMB_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/orgs/$ORG_ID/members" \
@@ -207,12 +190,10 @@ if [ -n "$ORG_ID" ] && [ "$ORG_ID" != "null" ]; then
     assert_status "Add org member" "200" "$(echo "$MEMB_RESP" | tail -1)" "$(echo "$MEMB_RESP" | head -n -1)"
   fi
 
-  # List members
   MEMB_LIST=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/orgs/$ORG_ID/members" 2>/dev/null)
   assert_status "List org members" "200" "$(echo "$MEMB_LIST" | tail -1)" "$(echo "$MEMB_LIST" | head -n -1)"
 fi
 
-# ─── 6. PROJECTS ─────────────────────────────────────────────────
 echo ""
 echo "=== 6. PROJECTS ==="
 
@@ -227,7 +208,6 @@ if [ "$PROJ_CODE" = "201" ]; then
   API_KEY=$(jq_field "$PROJ_BODY" ".api_key")
   ok "Project created (id=$PROJECT_ID)"
 elif [ "$PROJ_CODE" = "409" ]; then
-  # Already exists
   PROJ_LIST=$(curl -s -H "$AUTH" "$API/orgs/$ORG_ID/projects" 2>/dev/null)
   PROJECT_ID=$(echo "$PROJ_LIST" | jq -r '[.[] | select(.slug=="test-project")] | .[0].id' 2>/dev/null)
   ok "Project exists, reusing (id=$PROJECT_ID)"
@@ -241,18 +221,15 @@ if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
   warn "Fallback to first project: $PROJECT_ID"
 fi
 
-# Get project
 if [ -n "$PROJECT_ID" ] && [ "$PROJECT_ID" != "null" ]; then
   GET_PROJ=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/projects/$PROJECT_ID" 2>/dev/null)
   assert_status "Get project" "200" "$(echo "$GET_PROJ" | tail -1)" "$(echo "$GET_PROJ" | head -n -1)"
 
-  # Rotate API key
   ROT_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/projects/$PROJECT_ID/rotate-key" \
     -H "$AUTH" 2>/dev/null)
   assert_status "Rotate project API key" "200" "$(echo "$ROT_RESP" | tail -1)" "$(echo "$ROT_RESP" | head -n -1)"
 fi
 
-# ─── 7. RETRY POLICIES ───────────────────────────────────────────
 echo ""
 echo "=== 7. RETRY POLICIES ==="
 
@@ -274,7 +251,6 @@ else
   RP_ID=""
 fi
 
-# Also create fixed and linear policies
 for STRAT in fixed linear; do
   STRAT_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/projects/$PROJECT_ID/retry-policies" \
     -H "$AUTH" -H "Content-Type: application/json" \
@@ -287,11 +263,9 @@ for STRAT in fixed linear; do
   fi
 done
 
-# List retry policies
 LIST_RP_RESP=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/projects/$PROJECT_ID/retry-policies" 2>/dev/null)
 assert_status "List retry policies" "200" "$(echo "$LIST_RP_RESP" | tail -1)" ""
 
-# ─── 8. QUEUES ───────────────────────────────────────────────────
 echo ""
 echo "=== 8. QUEUES ==="
 
@@ -320,7 +294,6 @@ for DEF in "${QUEUE_DEFS[@]}"; do
     QUEUE_NAMES+=("$QNAME")
     ok "Queue '$QNAME' created (id=$QID)"
   elif [ "$Q_CODE" = "409" ]; then
-    # Find existing
     ALL_Q=$(curl -s -H "$AUTH" "$API/projects/$PROJECT_ID/queues" 2>/dev/null)
     QID=$(echo "$ALL_Q" | jq -r --arg n "$QNAME" '[.[] | select(.name==$n)] | .[0].id' 2>/dev/null)
     QUEUE_IDS+=("$QID")
@@ -337,36 +310,28 @@ NOTIF_QUEUE="${QUEUE_IDS[2]}"
 REPORT_QUEUE="${QUEUE_IDS[3]}"
 PAYMENT_QUEUE="${QUEUE_IDS[4]}"
 
-# Test queue operations
 if [ -n "$DEFAULT_QUEUE" ] && [ "$DEFAULT_QUEUE" != "null" ]; then
-  # Get queue
   GQ=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/queues/$DEFAULT_QUEUE" 2>/dev/null)
   assert_status "Get queue by ID" "200" "$(echo "$GQ" | tail -1)" ""
 
-  # Pause queue
   PAUSE=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/pause" -H "$AUTH" 2>/dev/null)
   assert_status "Pause queue" "200" "$(echo "$PAUSE" | tail -1)" ""
 
-  # Resume queue
   RESUME=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/resume" -H "$AUTH" 2>/dev/null)
   assert_status "Resume queue" "200" "$(echo "$RESUME" | tail -1)" ""
 
-  # Queue stats
   STATS=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/queues/$DEFAULT_QUEUE/stats" 2>/dev/null)
   assert_status "Queue stats" "200" "$(echo "$STATS" | tail -1)" ""
 
-  # Update queue
   UPD_Q=$(curl -s -w "\n%{http_code}" -X PUT "$API/queues/$DEFAULT_QUEUE" \
     -H "$AUTH" -H "Content-Type: application/json" \
     -d '{"concurrency_limit":15}' 2>/dev/null)
   assert_status "Update queue concurrency" "200" "$(echo "$UPD_Q" | tail -1)" ""
 fi
 
-# ─── 9. JOB CREATION - CORE WORKFLOWS ────────────────────────────
 echo ""
 echo "=== 9. JOB CREATION ==="
 
-# 9a. Basic job
 JOB_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"process_order","payload":{"order_id":"ORD-001","amount":99.99},"priority":5}' 2>/dev/null)
@@ -375,13 +340,11 @@ JOB_BODY=$(echo "$JOB_RESP" | head -n -1)
 assert_status "Create basic job" "201" "$JOB_CODE" "$JOB_BODY"
 BASIC_JOB_ID=$(jq_field "$JOB_BODY" ".id")
 
-# 9b. High-priority job
 HP_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$PAYMENT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"process_payment","payload":{"txn_id":"TXN-999","amount":500},"priority":9,"timeout_secs":30}' 2>/dev/null)
 assert_status "Create high-priority job" "201" "$(echo "$HP_RESP" | tail -1)" "$(echo "$HP_RESP" | head -n -1)"
 
-# 9c. Scheduled job (30 seconds from now)
 SCHEDULED_AT=$(date -u -d "+30 seconds" "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v+30S "+%Y-%m-%dT%H:%M:%SZ")
 SCHED_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
@@ -395,21 +358,18 @@ else
   fail "Scheduled job status" "expected 'scheduled', got '$SCHED_STATUS'"
 fi
 
-# 9d. Cron job
 CRON_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"heartbeat_check","payload":{},"cron_expression":"*/2 * * * *","max_attempts":1}' 2>/dev/null)
 assert_status "Create cron job" "201" "$(echo "$CRON_RESP" | tail -1)" "$(echo "$CRON_RESP" | head -n -1)"
 CRON_JOB_ID=$(jq_field "$(echo "$CRON_RESP" | head -n -1)" ".id")
 
-# 9e. Job with idempotency key
 IDEM_KEY="order-$(date +%s)-unique"
 IDEM_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d "{\"type\":\"idem_job\",\"payload\":{\"ref\":\"IDEM-001\"},\"idempotency_key\":\"$IDEM_KEY\"}" 2>/dev/null)
 assert_status "Create job with idempotency key" "201" "$(echo "$IDEM_RESP" | tail -1)" "$(echo "$IDEM_RESP" | head -n -1)"
 
-# 9f. Duplicate idempotency key (must 409)
 IDEM2_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d "{\"type\":\"idem_job\",\"payload\":{\"ref\":\"IDEM-001\"},\"idempotency_key\":\"$IDEM_KEY\"}" 2>/dev/null)
@@ -420,13 +380,11 @@ else
   fail "Idempotency protection" "expected 409, got $IDEM2_CODE"
 fi
 
-# 9g. Job with tags
 TAGS_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$EMAIL_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"send_email","payload":{"to":"user@example.com","subject":"Test"},"tags":["email","transactional","v2"]}' 2>/dev/null)
 assert_status "Create job with tags" "201" "$(echo "$TAGS_RESP" | tail -1)" "$(echo "$TAGS_RESP" | head -n -1)"
 
-# 9h. Batch job creation
 BATCH_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$NOTIF_QUEUE/jobs/batch" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '[
@@ -447,33 +405,27 @@ else
   fail "Batch count" "expected 5, got $BATCH_COUNT"
 fi
 
-# 9i. Get job by ID
 if [ -n "$BASIC_JOB_ID" ] && [ "$BASIC_JOB_ID" != "null" ]; then
   GET_JOB=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/jobs/$BASIC_JOB_ID" 2>/dev/null)
   assert_status "Get job by ID" "200" "$(echo "$GET_JOB" | tail -1)" "$(echo "$GET_JOB" | head -n -1)"
 fi
 
-# 9j. List jobs with status filter
 LIST_Q=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/queues/$DEFAULT_QUEUE/jobs?status=queued&limit=20" 2>/dev/null)
 assert_status "List jobs (status=queued)" "200" "$(echo "$LIST_Q" | tail -1)" ""
 
-# 9k. Create a job to cancel
 CANCEL_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"cancel_target","payload":{"action":"something"}}' 2>/dev/null)
 CANCEL_JID=$(jq_field "$(echo "$CANCEL_RESP" | head -n -1)" ".id")
 
 if [ -n "$CANCEL_JID" ] && [ "$CANCEL_JID" != "null" ]; then
-  # Cancel it
   CANCEL_ACT=$(curl -s -w "\n%{http_code}" -X DELETE "$API/jobs/$CANCEL_JID" -H "$AUTH" 2>/dev/null)
   assert_status "Cancel queued job" "200" "$(echo "$CANCEL_ACT" | tail -1)" "$(echo "$CANCEL_ACT" | head -n -1)"
 
-  # Retry from cancelled
   RETRY_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/jobs/$CANCEL_JID/retry" -H "$AUTH" 2>/dev/null)
   assert_status "Retry cancelled job" "200" "$(echo "$RETRY_RESP" | tail -1)" "$(echo "$RETRY_RESP" | head -n -1)"
 fi
 
-# ─── 10. SUBMIT BULK JOBS FOR WORKER LOAD TEST ────────────────────
 echo ""
 echo "=== 10. BULK JOB SUBMISSION (load for workers) ==="
 
@@ -494,7 +446,6 @@ for i in $(seq 1 100); do
 done
 ok "Bulk submitted $SUBMITTED/100 random jobs across queues"
 
-# ─── 11. START 20 WORKER PROCESSES ───────────────────────────────
 echo ""
 echo "=== 11. STARTING 20 WORKER PROCESSES ==="
 
@@ -508,7 +459,7 @@ kill $(pgrep -f "bin/worker") 2>/dev/null || true
 sleep 1
 
 for i in $(seq 1 20); do
-  CONC=$((RANDOM % 8 + 3))  # 3-10 concurrency
+  CONC=$((RANDOM % 8 + 3))
   LOG="/tmp/worker_${i}.log"
   DATABASE_URL="$DB_URL" \
   REDIS_URL="$REDIS_URL_VAL" \
@@ -525,7 +476,6 @@ done
 echo "  Started ${#WORKER_PIDS[@]} workers, waiting for registration..."
 sleep 8
 
-# Check how many registered
 WORKERS_RESP=$(curl -s -H "$AUTH" "$API/projects/$PROJECT_ID/workers" 2>/dev/null)
 ACTIVE_COUNT=$(echo "$WORKERS_RESP" | jq -r '[.[] | select(.status=="active")] | length' 2>/dev/null || echo "0")
 if [ "$ACTIVE_COUNT" -ge 15 ]; then
@@ -537,7 +487,6 @@ else
   fail "Worker registration" "only $ACTIVE_COUNT active workers registered"
 fi
 
-# ─── 12. LET WORKERS PROCESS - MONITOR PROGRESS ──────────────────
 echo ""
 echo "=== 12. JOB EXECUTION MONITORING (30s observation) ==="
 
@@ -548,13 +497,11 @@ for round in 1 2 3; do
   echo "  Round $round/3 - default queue: $Q_STATUS"
 done
 
-# Check overall metrics
 METRICS_RESP=$(curl -s -H "$AUTH" "$API/projects/$PROJECT_ID/metrics" 2>/dev/null)
 METRICS_WORKERS=$(jq_field "$METRICS_RESP" ".active_workers")
 METRICS_COMPLETED=$(jq_field "$METRICS_RESP" ".completed_24h")
 ok "Project metrics endpoint returns data (active_workers=$METRICS_WORKERS, completed_24h=$METRICS_COMPLETED)"
 
-# ─── 13. WORKER API TESTS ────────────────────────────────────────
 echo ""
 echo "=== 13. WORKER API ==="
 WORKERS_LIST=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/projects/$PROJECT_ID/workers" 2>/dev/null)
@@ -566,11 +513,9 @@ if [ -n "$FIRST_WORKER_ID" ] && [ "$FIRST_WORKER_ID" != "null" ]; then
   assert_status "Get worker by ID" "200" "$(echo "$GET_W" | tail -1)" "$(echo "$GET_W" | head -n -1)"
 fi
 
-# ─── 14. JOB LOGS AND EXECUTIONS ────────────────────────────────
 echo ""
 echo "=== 14. JOB LOGS AND EXECUTIONS ==="
 
-# Find a completed job
 COMPLETED_JOB=$(curl -s -H "$AUTH" "$API/queues/$DEFAULT_QUEUE/jobs?status=completed&limit=1" 2>/dev/null)
 COMP_ID=$(echo "$COMPLETED_JOB" | jq -r '.data[0].id' 2>/dev/null)
 
@@ -590,25 +535,21 @@ else
   warn "No completed jobs found yet - workers may still be processing"
 fi
 
-# ─── 15. DEAD LETTER QUEUE ───────────────────────────────────────
 echo ""
 echo "=== 15. DEAD LETTER QUEUE ==="
-sleep 15  # Wait for always_fail jobs to exhaust retries
+sleep 15
 
 for QID in "${QUEUE_IDS[@]}"; do
   DLQ_RESP=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/queues/$QID/dlq" 2>/dev/null)
   assert_status "List DLQ for queue" "200" "$(echo "$DLQ_RESP" | tail -1)" ""
 done
 
-# Find a DLQ entry
 DLQ_ALL=$(curl -s -H "$AUTH" "$API/queues/$DEFAULT_QUEUE/dlq" 2>/dev/null)
 DLQ_ENTRY=$(echo "$DLQ_ALL" | jq -r '.data[0].id' 2>/dev/null)
 if [ -n "$DLQ_ENTRY" ] && [ "$DLQ_ENTRY" != "null" ]; then
-  # Retry from DLQ
   DLQR=$(curl -s -w "\n%{http_code}" -X POST "$API/dlq/$DLQ_ENTRY/retry" -H "$AUTH" 2>/dev/null)
   assert_status "Retry DLQ entry" "200" "$(echo "$DLQR" | tail -1)" "$(echo "$DLQR" | head -n -1)"
 
-  # Create another always_fail job and discard from DLQ
   AF_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
     -H "$AUTH" -H "Content-Type: application/json" \
     -d '{"type":"always_fail","payload":{},"max_attempts":1}' 2>/dev/null)
@@ -618,7 +559,6 @@ else
   warn "No DLQ entries yet - always_fail jobs may still be retrying"
 fi
 
-# ─── 16. QUEUE METRICS ───────────────────────────────────────────
 echo ""
 echo "=== 16. QUEUE METRICS ==="
 for QID in "${QUEUE_IDS[@]}"; do
@@ -626,10 +566,8 @@ for QID in "${QUEUE_IDS[@]}"; do
   assert_status "Queue metrics ($QID)" "200" "$(echo "$QM_RESP" | tail -1)" ""
 done
 
-# ─── 17. PRIORITY ORDERING VERIFICATION ──────────────────────────
 echo ""
 echo "=== 17. PRIORITY ORDERING ==="
-# Submit 5 jobs with different priorities and verify ordering
 PRIO_IDS=()
 for PRIO in 1 3 5 7 9; do
   PR=$(curl -s -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
@@ -640,29 +578,23 @@ for PRIO in 1 3 5 7 9; do
 done
 ok "Priority jobs created (1,3,5,7,9) - workers should process priority=9 first (ORDER BY priority ASC maps to DESC in schema)"
 
-# ─── 18. PAUSED QUEUE JOB SUBMISSION ────────────────────────────
 echo ""
 echo "=== 18. PAUSED QUEUE BEHAVIOR ==="
-# Pause the reports queue and submit a job - it should accept but not run
 curl -s -X POST "$API/queues/$REPORT_QUEUE/pause" -H "$AUTH" > /dev/null
 PAUSED_JOB=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$REPORT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"type":"generate_report","payload":{"type":"monthly"}}' 2>/dev/null)
-# Note: The API currently accepts jobs even when queue is paused (pausing affects worker polling)
 PAUSED_CODE=$(echo "$PAUSED_JOB" | tail -1)
 if [ "$PAUSED_CODE" = "201" ]; then
   ok "Paused queue still accepts job submissions (pausing is a worker-side gate)"
 else
   warn "Paused queue rejected job submission (HTTP $PAUSED_CODE)"
 fi
-# Resume it
 curl -s -X POST "$API/queues/$REPORT_QUEUE/resume" -H "$AUTH" > /dev/null
 
-# ─── 19. ERROR CASES ─────────────────────────────────────────────
 echo ""
 echo "=== 19. ERROR HANDLING ==="
 
-# Missing auth
 NOAUTH=$(curl -s -w "\n%{http_code}" "$API/orgs" 2>/dev/null)
 if [ "$(echo "$NOAUTH" | tail -1)" = "401" ]; then
   ok "Unauthenticated request returns 401"
@@ -670,7 +602,6 @@ else
   fail "Auth guard" "expected 401, got $(echo "$NOAUTH" | tail -1)"
 fi
 
-# Invalid job type (missing 'type' field)
 INV_JOB=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"payload":{"x":1}}' 2>/dev/null)
@@ -680,7 +611,6 @@ else
   fail "Validation: missing type" "expected 400, got $(echo "$INV_JOB" | tail -1)"
 fi
 
-# Non-existent job
 NF_JOB=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/jobs/00000000-0000-0000-0000-000000000000" 2>/dev/null)
 if [ "$(echo "$NF_JOB" | tail -1)" = "404" ]; then
   ok "Non-existent job returns 404"
@@ -688,10 +618,7 @@ else
   fail "404 for missing job" "got $(echo "$NF_JOB" | tail -1)"
 fi
 
-# Cancel already-running job (should conflict)
-# (running jobs can't be cancelled directly)
 
-# Bad JSON
 BAD_JSON=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$DEFAULT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
   -d 'not-valid-json' 2>/dev/null)
@@ -701,7 +628,6 @@ else
   fail "JSON validation" "expected 400, got $(echo "$BAD_JSON" | tail -1)"
 fi
 
-# Short password (< 8 chars)
 SHORT_PW=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email":"shortpw@test.io","password":"abc","name":"Short"}' 2>/dev/null)
@@ -711,11 +637,9 @@ else
   fail "Password length validation" "expected 400, got $(echo "$SHORT_PW" | tail -1)"
 fi
 
-# ─── 20. SUSTAINED LOAD + METRICS SNAPSHOT ────────────────────────
 echo ""
 echo "=== 20. SUSTAINED LOAD (60s, multiple users) ==="
 
-# Submit jobs from multiple user tokens
 for i in $(seq 1 5); do
   TOKEN="${USER_TOKENS[${USER_EMAILS[$((i-1))]}]:-}"
   [ -z "$TOKEN" ] && continue
@@ -732,7 +656,6 @@ ok "Concurrent multi-user job submission (5 users × 10 jobs)"
 echo "  Waiting 30s for worker processing..."
 sleep 30
 
-# Final snapshot
 FINAL_METRICS=$(curl -s -H "$AUTH" "$API/projects/$PROJECT_ID/metrics" 2>/dev/null)
 FINAL_WORKERS=$(jq_field "$FINAL_METRICS" ".active_workers")
 FINAL_COMPLETED=$(jq_field "$FINAL_METRICS" ".completed_24h")
@@ -745,13 +668,11 @@ DF_DEAD=$(echo "$DEFAULT_FINAL" | jq -r '.by_status.dead // 0' 2>/dev/null)
 ok "Final snapshot - workers=$FINAL_WORKERS, completed_24h=$FINAL_COMPLETED"
 ok "Default queue - completed=$DF_COMPLETED, queued=$DF_QUEUED, dead=$DF_DEAD"
 
-# ─── CLEANUP: Kill workers ────────────────────────────────────────
 echo ""
 echo "=== CLEANUP ==="
 kill $(pgrep -f "bin/worker") 2>/dev/null || true
 ok "Workers stopped"
 
-# ─── FINAL REPORT ────────────────────────────────────────────────
 echo ""
 echo "================================================================"
 echo " TEST RESULTS"
@@ -765,7 +686,6 @@ echo "  Total FAIL: $FAIL"
 echo "  Warnings:   ${#WARNINGS[@]}"
 echo ""
 
-# Write summary for Testing.md
 cat > /tmp/test_summary.txt << EOF
 PASS=$PASS
 FAIL=$FAIL

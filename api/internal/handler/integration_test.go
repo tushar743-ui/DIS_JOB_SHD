@@ -21,15 +21,14 @@ import (
 	"github.com/tushar/dis-job-queue/api/internal/router"
 )
 
-// shared test state - set up once in TestMain
 var (
 	testServer    *httptest.Server
 	testClient    *http.Client
-	adminToken    string // owner of testOrgID / testProjectID
+	adminToken    string
 	testOrgID     string
 	testProjectID string
 	testQueueID   string
-	testRunID     string // random suffix to avoid name collisions between runs
+	testRunID     string
 )
 
 func TestMain(m *testing.M) {
@@ -51,7 +50,6 @@ func TestMain(m *testing.M) {
 	testServer = httptest.NewServer(router.New(cfg, pool, rdb))
 	testClient = testServer.Client()
 
-	// Register admin user and set up org/project/queue for shared use.
 	adminEmail := fmt.Sprintf("admin-%s@djq-test.io", testRunID)
 	body := mustJSON(map[string]any{"email": adminEmail, "password": "Qz7#vLmR4t", "name": "Test Admin"})
 	resp := mustDo("POST", "/api/v1/auth/register", body, "")
@@ -78,7 +76,6 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	// Cleanup: delete org (cascades to projects, queues, jobs)
 	mustDo("DELETE", fmt.Sprintf("/api/v1/orgs/%s", testOrgID), nil, adminToken)
 	testServer.Close()
 	pool.Close()
@@ -86,8 +83,6 @@ func TestMain(m *testing.M) {
 
 	os.Exit(code)
 }
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
 
 func mustJSON(v any) io.Reader {
 	b, _ := json.Marshal(v)
@@ -140,8 +135,6 @@ func newToken(t *testing.T) (token, userID string) {
 	return body["access_token"], body["user_id"]
 }
 
-// ─── Auth tests ───────────────────────────────────────────────────────────────
-
 func TestAuth_Register(t *testing.T) {
 	email := fmt.Sprintf("reg-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
 	resp := mustDo("POST", "/api/v1/auth/register",
@@ -162,7 +155,6 @@ func TestAuth_Register_DuplicateEmail(t *testing.T) {
 	body := mustJSON(map[string]any{"email": email, "password": "StrongPass1!", "name": "User"})
 	mustDo("POST", "/api/v1/auth/register", body, "")
 
-	// second registration with same email
 	body2 := mustJSON(map[string]any{"email": email, "password": "StrongPass1!", "name": "User2"})
 	resp2 := mustDo("POST", "/api/v1/auth/register", body2, "")
 	assertStatus(t, resp2, http.StatusConflict)
@@ -176,9 +168,9 @@ func TestAuth_Register_ShortPassword(t *testing.T) {
 
 func TestAuth_Register_MissingFields(t *testing.T) {
 	cases := []map[string]any{
-		{"password": "StrongPass1!", "name": "User"},    // missing email
-		{"email": "x@x.io", "name": "User"},             // missing password
-		{"email": "x@x.io", "password": "StrongPass1!"}, // missing name
+		{"password": "StrongPass1!", "name": "User"},
+		{"email": "x@x.io", "name": "User"},
+		{"email": "x@x.io", "password": "StrongPass1!"},
 	}
 	for _, c := range cases {
 		resp := mustDo("POST", "/api/v1/auth/register", mustJSON(c), "")
@@ -220,7 +212,6 @@ func TestAuth_RefreshToken_Rotation(t *testing.T) {
 	mustDecode(regResp, &regBody)
 	originalRefresh := regBody["refresh_token"]
 
-	// use refresh token
 	ref1 := mustDo("POST", "/api/v1/auth/refresh",
 		mustJSON(map[string]string{"refresh_token": originalRefresh}), "")
 	assertStatus(t, ref1, http.StatusOK)
@@ -230,7 +221,6 @@ func TestAuth_RefreshToken_Rotation(t *testing.T) {
 		t.Fatal("expected new access_token after refresh")
 	}
 
-	// replay the original - must be rejected (token rotation)
 	ref2 := mustDo("POST", "/api/v1/auth/refresh",
 		mustJSON(map[string]string{"refresh_token": originalRefresh}), "")
 	assertStatus(t, ref2, http.StatusUnauthorized)
@@ -257,13 +247,10 @@ func TestAuth_InvalidToken_Returns401(t *testing.T) {
 	assertStatus(t, resp, http.StatusUnauthorized)
 }
 
-// ─── Org tests ────────────────────────────────────────────────────────────────
-
 func TestOrg_CRUD(t *testing.T) {
 	token, _ := newToken(t)
 	name := "CRUD Org " + testRunID + fmt.Sprint(time.Now().UnixNano())
 
-	// create
 	resp := mustDo("POST", "/api/v1/orgs", mustJSON(map[string]any{"name": name}), token)
 	assertStatus(t, resp, http.StatusCreated)
 	var created map[string]string
@@ -276,11 +263,9 @@ func TestOrg_CRUD(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/orgs/%s", orgID), nil, token)
 	})
 
-	// get
 	get := mustDo("GET", fmt.Sprintf("/api/v1/orgs/%s", orgID), nil, token)
 	assertStatus(t, get, http.StatusOK)
 
-	// list - must include our new org
 	list := mustDo("GET", "/api/v1/orgs", nil, token)
 	assertStatus(t, list, http.StatusOK)
 	var orgs []map[string]any
@@ -295,12 +280,10 @@ func TestOrg_CRUD(t *testing.T) {
 		t.Fatal("newly created org not returned in list")
 	}
 
-	// update
 	upd := mustDo("PUT", fmt.Sprintf("/api/v1/orgs/%s", orgID),
 		mustJSON(map[string]any{"name": name + " Updated"}), token)
 	assertStatus(t, upd, http.StatusOK)
 
-	// verify update
 	get2 := mustDo("GET", fmt.Sprintf("/api/v1/orgs/%s", orgID), nil, token)
 	var body map[string]any
 	mustDecode(get2, &body)
@@ -314,11 +297,9 @@ func TestOrg_AddMember(t *testing.T) {
 	memberToken, _ := newToken(t)
 	memberEmail := fmt.Sprintf("mem-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
 
-	// register member with known email
 	mustDo("POST", "/api/v1/auth/register",
 		mustJSON(map[string]any{"email": memberEmail, "password": "Cy8@rDkT5n", "name": "Member"}), "")
 
-	// create org as owner
 	orgResp := mustDo("POST", "/api/v1/orgs",
 		mustJSON(map[string]any{"name": "Member Org " + testRunID + fmt.Sprint(time.Now().UnixNano())}), ownerToken)
 	var orgBody map[string]string
@@ -328,16 +309,13 @@ func TestOrg_AddMember(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/orgs/%s", orgID), nil, ownerToken)
 	})
 
-	// add member by email
 	addResp := mustDo("POST", fmt.Sprintf("/api/v1/orgs/%s/members", orgID),
 		mustJSON(map[string]any{"email": memberEmail, "role": "member"}), ownerToken)
 	assertStatus(t, addResp, http.StatusOK)
 
-	// member can now list this org
 	listResp := mustDo("GET", "/api/v1/orgs", nil, memberToken)
 	assertStatus(t, listResp, http.StatusOK)
 
-	// list members
 	membersResp := mustDo("GET", fmt.Sprintf("/api/v1/orgs/%s/members", orgID), nil, ownerToken)
 	assertStatus(t, membersResp, http.StatusOK)
 	var members []map[string]any
@@ -346,8 +324,6 @@ func TestOrg_AddMember(t *testing.T) {
 		t.Fatalf("expected at least 2 members, got %d", len(members))
 	}
 }
-
-// ─── Project tests ────────────────────────────────────────────────────────────
 
 func TestProject_CRUD(t *testing.T) {
 	name := "Test Proj " + fmt.Sprint(time.Now().UnixNano())
@@ -366,15 +342,12 @@ func TestProject_CRUD(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/projects/%s", projectID), nil, adminToken)
 	})
 
-	// get
 	get := mustDo("GET", fmt.Sprintf("/api/v1/projects/%s", projectID), nil, adminToken)
 	assertStatus(t, get, http.StatusOK)
 
-	// list
 	list := mustDo("GET", fmt.Sprintf("/api/v1/orgs/%s/projects", testOrgID), nil, adminToken)
 	assertStatus(t, list, http.StatusOK)
 
-	// rotate key
 	rot := mustDo("POST", fmt.Sprintf("/api/v1/projects/%s/rotate-key", projectID), nil, adminToken)
 	assertStatus(t, rot, http.StatusOK)
 	var rotBody map[string]string
@@ -403,8 +376,6 @@ func TestProject_DuplicateName_Returns409(t *testing.T) {
 		mustJSON(map[string]any{"name": name}), adminToken)
 	assertStatus(t, resp2, http.StatusConflict)
 }
-
-// ─── Retry policy tests ───────────────────────────────────────────────────────
 
 func TestRetryPolicy_CreateAndList(t *testing.T) {
 	policyName := "exp-policy-" + fmt.Sprint(time.Now().UnixNano())
@@ -438,8 +409,6 @@ func TestRetryPolicy_CreateAndList(t *testing.T) {
 	}
 }
 
-// ─── Queue tests ──────────────────────────────────────────────────────────────
-
 func TestQueue_CRUD(t *testing.T) {
 	qName := "q-" + fmt.Sprint(time.Now().UnixNano())
 	resp := mustDo("POST", fmt.Sprintf("/api/v1/projects/%s/queues", testProjectID),
@@ -452,7 +421,6 @@ func TestQueue_CRUD(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/queues/%s", qID), nil, adminToken)
 	})
 
-	// get
 	get := mustDo("GET", fmt.Sprintf("/api/v1/queues/%s", qID), nil, adminToken)
 	assertStatus(t, get, http.StatusOK)
 	var qBody map[string]any
@@ -461,16 +429,13 @@ func TestQueue_CRUD(t *testing.T) {
 		t.Fatalf("expected priority=7, got %v", qBody["priority"])
 	}
 
-	// list
 	list := mustDo("GET", fmt.Sprintf("/api/v1/projects/%s/queues", testProjectID), nil, adminToken)
 	assertStatus(t, list, http.StatusOK)
 
-	// update
 	upd := mustDo("PUT", fmt.Sprintf("/api/v1/queues/%s", qID),
 		mustJSON(map[string]any{"concurrency_limit": 20}), adminToken)
 	assertStatus(t, upd, http.StatusOK)
 
-	// stats
 	stats := mustDo("GET", fmt.Sprintf("/api/v1/queues/%s/stats", qID), nil, adminToken)
 	assertStatus(t, stats, http.StatusOK)
 }
@@ -487,11 +452,9 @@ func TestQueue_PauseResume(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/queues/%s", qID), nil, adminToken)
 	})
 
-	// pause
 	pause := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/pause", qID), nil, adminToken)
 	assertStatus(t, pause, http.StatusOK)
 
-	// verify paused
 	get := mustDo("GET", fmt.Sprintf("/api/v1/queues/%s", qID), nil, adminToken)
 	var qBody map[string]any
 	mustDecode(get, &qBody)
@@ -499,7 +462,6 @@ func TestQueue_PauseResume(t *testing.T) {
 		t.Fatalf("expected paused=true, got %v", qBody["paused"])
 	}
 
-	// resume
 	resume := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/resume", qID), nil, adminToken)
 	assertStatus(t, resume, http.StatusOK)
 
@@ -510,8 +472,6 @@ func TestQueue_PauseResume(t *testing.T) {
 		t.Fatalf("expected paused=false after resume, got %v", qBody2["paused"])
 	}
 }
-
-// ─── Job tests ────────────────────────────────────────────────────────────────
 
 func TestJob_Create_Basic(t *testing.T) {
 	resp := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
@@ -581,14 +541,12 @@ func TestJob_Create_InvalidJSON_Returns400(t *testing.T) {
 }
 
 func TestJob_GetByID(t *testing.T) {
-	// create
 	cr := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
 		mustJSON(map[string]any{"type": "test_get", "payload": map[string]any{}}), adminToken)
 	var cr_body map[string]string
 	mustDecode(cr, &cr_body)
 	jobID := cr_body["id"]
 
-	// get
 	get := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	assertStatus(t, get, http.StatusOK)
 	var jobBody map[string]any
@@ -607,12 +565,10 @@ func TestJob_GetByID_NotFound(t *testing.T) {
 }
 
 func TestJob_ListWithStatusFilter(t *testing.T) {
-	// create a scheduled job (has status=scheduled)
 	future := time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
 	mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
 		mustJSON(map[string]any{"type": "filter_test", "scheduled_at": future}), adminToken)
 
-	// list all
 	listAll := mustDo("GET", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID), nil, adminToken)
 	assertStatus(t, listAll, http.StatusOK)
 	var allBody map[string]any
@@ -621,7 +577,6 @@ func TestJob_ListWithStatusFilter(t *testing.T) {
 		t.Fatal("expected total field in paginated response")
 	}
 
-	// list by status=scheduled
 	listSched := mustDo("GET",
 		fmt.Sprintf("/api/v1/queues/%s/jobs?status=scheduled", testQueueID), nil, adminToken)
 	assertStatus(t, listSched, http.StatusOK)
@@ -646,7 +601,6 @@ func TestJob_Cancel(t *testing.T) {
 	cancel := mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	assertStatus(t, cancel, http.StatusOK)
 
-	// verify status
 	get := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	var jobBody map[string]any
 	mustDecode(get, &jobBody)
@@ -656,16 +610,13 @@ func TestJob_Cancel(t *testing.T) {
 }
 
 func TestJob_Cancel_AlreadyRunning_Returns409(t *testing.T) {
-	// cancel a non-existent / already cancelled job - should conflict
 	cr := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
 		mustJSON(map[string]any{"type": "cancel_conflict", "payload": map[string]any{}}), adminToken)
 	var crBody map[string]string
 	mustDecode(cr, &crBody)
 	jobID := crBody["id"]
 
-	// cancel once
 	mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
-	// cancel again - already cancelled, should 409
 	resp := mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusConflict)
 }
@@ -677,14 +628,11 @@ func TestJob_Retry_FromCancelled(t *testing.T) {
 	mustDecode(cr, &crBody)
 	jobID := crBody["id"]
 
-	// cancel first
 	mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 
-	// retry
 	retry := mustDo("POST", fmt.Sprintf("/api/v1/jobs/%s/retry", jobID), nil, adminToken)
 	assertStatus(t, retry, http.StatusOK)
 
-	// verify queued again
 	get := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	var jobBody map[string]any
 	mustDecode(get, &jobBody)
@@ -703,7 +651,6 @@ func TestJob_Retry_AlreadyQueued_Returns409(t *testing.T) {
 	mustDecode(cr, &crBody)
 	jobID := crBody["id"]
 
-	// retry a queued job (not failed/dead/cancelled) - must 409
 	resp := mustDo("POST", fmt.Sprintf("/api/v1/jobs/%s/retry", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusConflict)
 }
@@ -743,7 +690,6 @@ func TestJob_CreateBatch_Scheduled(t *testing.T) {
 	assertStatus(t, resp, http.StatusCreated)
 	var body map[string]any
 	mustDecode(resp, &body)
-	// verify both jobs are scheduled
 	ids := body["job_ids"].([]any)
 	for _, rawID := range ids {
 		get := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s", rawID), nil, adminToken)
@@ -774,10 +720,9 @@ func TestJob_Logs(t *testing.T) {
 
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s/logs", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusOK)
-	// empty array is fine - job hasn't run yet
 	var logs []any
 	mustDecode(resp, &logs)
-	_ = logs // just verifying the endpoint works
+	_ = logs
 }
 
 func TestJob_Executions(t *testing.T) {
@@ -790,8 +735,6 @@ func TestJob_Executions(t *testing.T) {
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s/executions", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusOK)
 }
-
-// ─── Metrics tests ────────────────────────────────────────────────────────────
 
 func TestMetrics_Project(t *testing.T) {
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/projects/%s/metrics", testProjectID), nil, adminToken)
@@ -822,14 +765,11 @@ func TestMetrics_Queue(t *testing.T) {
 	}
 }
 
-// ─── Worker API tests ─────────────────────────────────────────────────────────
-
 func TestWorker_List(t *testing.T) {
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/projects/%s/workers", testProjectID), nil, adminToken)
 	assertStatus(t, resp, http.StatusOK)
 	var workers []any
 	mustDecode(resp, &workers)
-	// workers may be empty if none are running - just verify shape
 	_ = workers
 }
 
@@ -838,8 +778,6 @@ func TestWorker_List_StatusFilter(t *testing.T) {
 		fmt.Sprintf("/api/v1/projects/%s/workers?status=active", testProjectID), nil, adminToken)
 	assertStatus(t, resp, http.StatusOK)
 }
-
-// ─── DLQ tests ────────────────────────────────────────────────────────────────
 
 func TestDLQ_List(t *testing.T) {
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/queues/%s/dlq", testQueueID), nil, adminToken)
@@ -851,10 +789,7 @@ func TestDLQ_List(t *testing.T) {
 	}
 }
 
-// ─── Multi-user isolation test ────────────────────────────────────────────────
-
 func TestMultiUser_OrgIsolation(t *testing.T) {
-	// user A creates an org
 	tokenA, _ := newToken(t)
 	orgRespA := mustDo("POST", "/api/v1/orgs",
 		mustJSON(map[string]any{"name": "Org A " + fmt.Sprint(time.Now().UnixNano())}), tokenA)
@@ -865,7 +800,6 @@ func TestMultiUser_OrgIsolation(t *testing.T) {
 		mustDo("DELETE", fmt.Sprintf("/api/v1/orgs/%s", orgAID), nil, tokenA)
 	})
 
-	// user B should NOT see user A's org
 	tokenB, _ := newToken(t)
 	listB := mustDo("GET", "/api/v1/orgs", nil, tokenB)
 	var orgsB []map[string]any
@@ -876,8 +810,6 @@ func TestMultiUser_OrgIsolation(t *testing.T) {
 		}
 	}
 }
-
-// ─── Load: 10 users × 10 jobs ─────────────────────────────────────────────────
 
 func TestLoad_MultiUserJobSubmission(t *testing.T) {
 	if testing.Short() {
@@ -930,7 +862,5 @@ func TestLoad_MultiUserJobSubmission(t *testing.T) {
 	}
 	t.Logf("load test: %d/%d submissions succeeded", passed, len(users)*10)
 }
-
-// ─── Unused import guard (for context usage) ──────────────────────────────────
 
 var _ = context.Background

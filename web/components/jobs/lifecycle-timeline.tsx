@@ -15,9 +15,7 @@ interface Step {
   Icon: LucideIcon;
   token: string;
   at?: string | null;
-  /** Appended after the timestamp, e.g. the "(28.83s)" on a run. */
   detail?: string;
-  /** Steps that only carry a duration, like Wait, hide the timestamp. */
   durationOnly?: boolean;
   active?: boolean;
 }

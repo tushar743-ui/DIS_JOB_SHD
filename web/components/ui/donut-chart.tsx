@@ -1,4 +1,3 @@
-// components/ui/donut-chart.tsx
 "use client";
 
 import * as React from "react";
@@ -7,11 +6,10 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export interface DonutChartSegment {
   value: number;
-  /** Any valid CSS color, e.g. hsl(var(--state-running)) */
   color: string;
   label: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- keeps the upstream component's open data shape
-  [key: string]: any; // Allow other data
+  [key: string]: any;
 }
 
 interface DonutChartProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -23,18 +21,12 @@ interface DonutChartProps extends React.HTMLAttributes<HTMLDivElement> {
   animationDelayPerSegment?: number;
   highlightOnHover?: boolean;
   centerContent?: React.ReactNode;
-  /** Degrees of empty space between adjacent arcs. Set 0 for a continuous ring. */
   gapDegrees?: number;
-  /** Depth pass: each arc is drawn as a gradient of its own hue instead of a flat fill. */
   gradient?: boolean;
   strokeLinecap?: "butt" | "round";
-  /** Colour of the ring behind the data. */
   trackColor?: string;
-  /** Highlight driven from outside (a legend, say), matched on segment label. */
   activeLabel?: string | null;
-  /** Callback function when a segment is hovered */
   onSegmentHover?: (segment: DonutChartSegment | null) => void;
-  /** Describes the chart to screen readers; the SVG is decorative without it. */
   ariaLabel?: string;
 }
 
@@ -73,12 +65,10 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
     const radius = size / 2 - strokeWidth / 2;
     const circumference = 2 * Math.PI * radius;
     const drawn = data.filter((segment) => segment.value > 0);
-    // A lone arc keeps its full sweep: a gap in a single ring reads as missing data.
     const gap = drawn.length > 1 ? (gapDegrees / 360) * circumference : 0;
     const gradientId = React.useId();
     let cumulativePercentage = 0;
 
-    // Kept in a ref so an inline callback prop cannot retrigger the effect every render.
     const hoverCallback = React.useRef(onSegmentHover);
     hoverCallback.current = onSegmentHover;
     React.useEffect(() => {
@@ -99,7 +89,7 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
           width={size}
           height={size}
           viewBox={`0 0 ${size} ${size}`}
-          className="overflow-visible -rotate-90" // Rotate to start at 12 o'clock
+          className="overflow-visible -rotate-90"
           role={ariaLabel ? "img" : "presentation"}
           aria-label={ariaLabel}
         >
@@ -129,7 +119,6 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
             </defs>
           )}
 
-          {/* Base background ring */}
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -139,7 +128,6 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
             strokeWidth={strokeWidth}
           />
 
-          {/* Data Segments */}
           <AnimatePresence>
             {drawn.map((segment, index) => {
               const percentage =
@@ -147,7 +135,6 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
                   ? 0
                   : (segment.value / internalTotalValue) * 100;
 
-              // Each arc gives up half a gap at both ends, floored so slivers stay visible.
               const arcLength = Math.max((percentage / 100) * circumference - gap, 1.5);
               const strokeDasharray = `${arcLength} ${circumference}`;
               const strokeDashoffset =
@@ -202,12 +189,11 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
           </AnimatePresence>
         </svg>
 
-        {/* Center Content */}
         {centerContent && (
           <div
             className="absolute flex flex-col items-center justify-center pointer-events-none"
             style={{
-              width: size - strokeWidth * 2.5, // Ensure content fits inside
+              width: size - strokeWidth * 2.5,
               height: size - strokeWidth * 2.5,
             }}
           >

@@ -1,6 +1,5 @@
 import { toast } from "@/components/ui/toast";
 
-/** The message api.ts throws when a refresh failed and the redirect is running. */
 const SESSION_EXPIRED = "session expired";
 
 export function errMessage(e: unknown, fallback: string): string {
@@ -11,10 +10,6 @@ export function errMessage(e: unknown, fallback: string): string {
 let lastToast = "";
 let lastToastAt = 0;
 
-/**
- * Surface a failed action. Polling screens can fail repeatedly against the same
- * dead backend, so an identical message is only shown once per window.
- */
 export function reportError(e: unknown, fallback: string) {
   const description = errMessage(e, fallback);
   if (!description) return;

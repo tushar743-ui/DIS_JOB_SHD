@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# Start the whole stack (API + worker + web) in a single terminal.
-#
-#   ./scripts/dev.sh              api + worker + web, live logs, Ctrl-C stops all
-#   ./scripts/dev.sh --watch      also rebuild/restart the Go services on .go changes
-#   ./scripts/dev.sh --help       all flags
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# ── options ──────────────────────────────────────────────────────────────────
 RUN_API=1
 RUN_WORKER=1
 RUN_WEB=1
@@ -62,7 +56,6 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# ── colours ──────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
   RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
@@ -75,7 +68,6 @@ say()  { printf '%s%s%s\n' "$CYAN$BOLD" "$*" "$RESET"; }
 warn() { printf '%s%s%s\n' "$YELLOW" "$*" "$RESET" >&2; }
 die()  { printf '%s%s%s\n' "$RED$BOLD" "$*" "$RESET" >&2; exit 1; }
 
-# ── env ──────────────────────────────────────────────────────────────────────
 if [[ -f "$ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -99,12 +91,11 @@ if (( RUN_API )) && [[ -z "${JWT_SECRET:-}" ]]; then
   die "JWT_SECRET is not set (check .env)"
 fi
 
-# ── preflight ────────────────────────────────────────────────────────────────
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"; }
 (( RUN_API || RUN_WORKER )) && need go
 (( RUN_WEB )) && { need node; need npm; }
 
-port_in_use() {  # $1 = port -> 0 when something is listening
+port_in_use() {
   local p="$1"
   if command -v ss >/dev/null 2>&1; then
     [[ -n "$(ss -ltnH "sport = :$p" 2>/dev/null)" ]]
@@ -115,7 +106,7 @@ port_in_use() {  # $1 = port -> 0 when something is listening
   fi
 }
 
-port_holder_pid() {  # $1 = port -> pid, empty when not visible to this user
+port_holder_pid() {
   local p="$1"
   if command -v ss >/dev/null 2>&1; then
     ss -ltnpH "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1
@@ -124,7 +115,7 @@ port_holder_pid() {  # $1 = port -> pid, empty when not visible to this user
   fi
 }
 
-port_holder_desc() {  # $1 = port -> human description of what holds it
+port_holder_desc() {
   local p="$1" pid container
   pid="$(port_holder_pid "$p")"
   if command -v docker >/dev/null 2>&1; then
@@ -138,7 +129,7 @@ port_holder_desc() {  # $1 = port -> human description of what holds it
   fi
 }
 
-check_port() {  # $1 = port, $2 = label
+check_port() {
   local p="$1" label="$2" pid var
   port_in_use "$p" || return 0
   var=$( [[ "$label" == api ]] && echo PORT || echo WEB_PORT )
@@ -163,7 +154,6 @@ check_port() {  # $1 = port, $2 = label
 (( RUN_API )) && check_port "$PORT" api
 (( RUN_WEB )) && check_port "$WEB_PORT" web
 
-# Local Postgres/Redis: bring the compose services up when the URLs point at localhost.
 db_host="$(sed -E 's#^[a-z+]+://([^@]*@)?([^:/?]+).*#\2#' <<<"$DATABASE_URL")"
 if [[ "$db_host" =~ ^(localhost|127\.0\.0\.1|\[::1\])$ ]]; then
   if command -v docker >/dev/null 2>&1; then
@@ -192,15 +182,13 @@ fi
 
 mkdir -p "$LOG_DIR"
 
-# ── supervision ──────────────────────────────────────────────────────────────
-set -m                      # every background job gets its own process group
+set -m
 PIDS=(); NAMES=()
 READY_PID=""
 SHUTTING_DOWN=0
 
-prefix_stream() {           # $1 = label, $2 = colour, $3 = logfile
+prefix_stream() {
   local label="$1" color="$2" logfile="$3" line
-  # the `|| [[ -n $line ]]` tail flushes output that lacks a trailing newline
   while IFS= read -r line || [[ -n "$line" ]]; do
     printf '%s%-9s%s%s│%s %s\n' "$color$BOLD" "$label" "$RESET" "$DIM" "$RESET" "$line"
     printf '%s\n' "$line" >>"$logfile"
@@ -209,11 +197,10 @@ prefix_stream() {           # $1 = label, $2 = colour, $3 = logfile
   return 0
 }
 
-go_fingerprint() {   # $1 = dir -> checksum of all .go file mtimes below it
+go_fingerprint() {
   find "$1" -name '*.go' -printf '%T@ %p\n' 2>/dev/null | sort | cksum
 }
 
-# start_service <label> <colour> <workdir> <watchdir|-> <cmd...>
 start_service() {
   local label="$1" color="$2" workdir="$3" watchdir="$4"; shift 4
   local logfile="$LOG_DIR/$label.log"
@@ -246,8 +233,6 @@ start_service() {
       done
       (( restarting )) && continue
 
-      # the service stopped on its own: report and idle until the code changes,
-      # so one bad build does not take the whole stack down in watch mode
       wait "$child" 2>/dev/null; code=$?
       echo "── exited (code $code) — waiting for a code change ──"
       while :; do
@@ -288,7 +273,6 @@ shutdown() {
 trap 'shutdown; exit 0' INT TERM
 trap 'shutdown' EXIT
 
-# ── launch ───────────────────────────────────────────────────────────────────
 printf '\n%s┌─ dis-job-queue dev ────────────────────────────────────%s\n' "$BOLD" "$RESET"
 printf '%s│%s  api    %s\n' "$BOLD" "$RESET" "$( ((RUN_API))    && echo "http://localhost:$PORT"     || echo "${DIM}skipped$RESET" )"
 printf '%s│%s  web    %s\n' "$BOLD" "$RESET" "$( ((RUN_WEB))    && echo "http://localhost:$WEB_PORT" || echo "${DIM}skipped$RESET" )"
@@ -318,7 +302,6 @@ if (( RUN_WEB )); then
     npm run dev -- --port "$WEB_PORT"
 fi
 
-# ── readiness banner ─────────────────────────────────────────────────────────
 if (( RUN_API )) && command -v curl >/dev/null 2>&1; then
   (
     for _ in $(seq 1 120); do
@@ -334,7 +317,6 @@ if (( RUN_API )) && command -v curl >/dev/null 2>&1; then
   READY_PID=$!
 fi
 
-# ── wait: if any service dies, take the rest down with it ────────────────────
 while :; do
   for idx in "${!PIDS[@]}"; do
     if ! kill -0 "${PIDS[$idx]}" 2>/dev/null; then

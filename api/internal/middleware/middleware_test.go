@@ -28,8 +28,6 @@ func signedToken(t *testing.T, secret string, userID string, expiry time.Duratio
 	return s
 }
 
-// okHandler records whether the request made it past the middleware, and what
-// user id the middleware put on the context.
 func okHandler(reached *bool, gotUserID *string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*reached = true
@@ -71,7 +69,6 @@ func TestAuthRejects(t *testing.T) {
 			wantBody:   `{"error":"missing token"}`,
 		},
 		{
-			// Without the scheme check a raw token would fall through to the parser.
 			name:       "token without Bearer scheme",
 			authHeader: signedToken(t, testSecret, "user-123", time.Minute, jwt.SigningMethodHS256),
 			wantBody:   `{"error":"missing token"}`,
@@ -82,7 +79,6 @@ func TestAuthRejects(t *testing.T) {
 			wantBody:   `{"error":"invalid token"}`,
 		},
 		{
-			// This is the case the web client must recognise and refresh on.
 			name:       "expired token",
 			authHeader: "Bearer " + signedToken(t, testSecret, "user-123", -time.Minute, jwt.SigningMethodHS256),
 			wantBody:   `{"error":"invalid token"}`,
@@ -120,13 +116,6 @@ func TestAuthRejects(t *testing.T) {
 	}
 }
 
-// A token whose header says "alg":"none" must not be honoured, or anyone could
-// mint credentials.
-//
-// Note this asserts the behaviour, not the implementation: jwt/v5 already
-// refuses none-alg tokens unless the parser opts in, so this still passes if
-// the SigningMethodHMAC guard in Auth is deleted. Keep the guard anyway - it is
-// the thing that stops an algorithm swap if that library default ever changes.
 func TestAuthRejectsUnsignedToken(t *testing.T) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, &Claims{
 		UserID: "attacker",

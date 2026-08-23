@@ -154,9 +154,7 @@ func (p *Poller) RunScheduler(ctx context.Context) {
 	}
 }
 
-// promoteDueJobs moves scheduled jobs whose run_at has passed into the queue.
 func (p *Poller) promoteDueJobs(ctx context.Context) {
-	// FOR UPDATE SKIP LOCKED prevents multiple workers from double-promoting
 	if _, err := p.db.Exec(ctx,
 		`UPDATE jobs SET status='queued', updated_at=now()
 		 WHERE id IN (
@@ -168,7 +166,6 @@ func (p *Poller) promoteDueJobs(ctx context.Context) {
 	}
 }
 
-// scheduleCronJobs gives every recurring job that has no pending run a next fire time.
 func (p *Poller) scheduleCronJobs(ctx context.Context) {
 	rows, err := p.db.Query(ctx,
 		`SELECT id, cron_expression FROM jobs
@@ -196,7 +193,6 @@ func (p *Poller) scheduleCronJobs(ctx context.Context) {
 		next, err := executor.NextCronRun(pj.expr, now)
 		if err != nil {
 			log.Warn().Str("job_id", pj.id).Str("cron", pj.expr).Msg("invalid cron expression")
-			// Park it so the scheduler stops re-reading a job it can never schedule.
 			p.db.Exec(ctx,
 				`UPDATE jobs SET status='failed', last_error=$1, updated_at=now() WHERE id=$2`,
 				"invalid cron expression: "+pj.expr, pj.id)
@@ -212,9 +208,6 @@ func (p *Poller) scheduleCronJobs(ctx context.Context) {
 	}
 }
 
-// reclaimStuckJobs re-queues jobs whose worker died between claiming and finishing.
-// A claim that never turned into a run is given a short grace period; a job that is
-// actually running gets its own timeout plus a minute before it is taken back.
 func (p *Poller) reclaimStuckJobs(ctx context.Context) {
 	tag, err := p.db.Exec(ctx,
 		`UPDATE jobs SET status='queued', claimed_by=NULL, claimed_at=NULL,

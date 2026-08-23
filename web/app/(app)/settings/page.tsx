@@ -17,9 +17,6 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [orgsLoaded, setOrgsLoaded] = useState(false);
 
-  // null means "the user has not touched this dropdown", so the persisted
-  // selection shows through once Zustand finishes hydrating. Deriving it here
-  // avoids mirroring store state into an effect.
   const [orgChoice, setOrgChoice] = useState<string | null>(null);
   const [projectChoice, setProjectChoice] = useState<string | null>(null);
   const selectedOrg = orgChoice ?? orgId ?? "";
@@ -27,7 +24,6 @@ export default function SettingsPage() {
 
   const loading = Boolean(accessToken) && !orgsLoaded;
 
-  // Wait for auth token before hitting the API (Zustand hydrates async)
   useEffect(() => {
     if (!accessToken) return;
     orgs.list().then(setOrgList).catch(() => {}).finally(() => setOrgsLoaded(true));

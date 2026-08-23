@@ -28,7 +28,6 @@ const LEVEL_CLASS: Record<string, string> = {
   debug: "text-muted-foreground/70",
 };
 
-/** One cell of the attribute grid: label above, value below. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">

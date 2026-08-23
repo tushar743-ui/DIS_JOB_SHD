@@ -80,42 +80,30 @@ CREATE TABLE jobs (
     priority        INT         NOT NULL DEFAULT 5 CHECK (priority BETWEEN 1 AND 10),
     max_attempts    INT         NOT NULL DEFAULT 3,
     attempt_count   INT         NOT NULL DEFAULT 0,
-    -- timing
     scheduled_at    TIMESTAMPTZ,                    
     run_at          TIMESTAMPTZ NOT NULL DEFAULT now(), 
     timeout_secs    INT         NOT NULL DEFAULT 300,
-    -- recurring
     cron_expression TEXT,
     next_run_at     TIMESTAMPTZ,
-    -- batch
     batch_id        UUID,
-    -- metadata
     idempotency_key TEXT        UNIQUE,
     tags            TEXT[]      NOT NULL DEFAULT '{}',
-    -- result
     last_error      TEXT,
     result          JSONB,
-    -- timestamps
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at    TIMESTAMPTZ,
     claimed_at      TIMESTAMPTZ,
-    -- worker that owns this job right now
-    claimed_by      UUID        -- FK to workers added below
+    claimed_by      UUID
 );
 
--- Index for the hot polling path: unclaimed, due, ordered by priority DESC then run_at ASC
 CREATE INDEX idx_jobs_poll ON jobs (queue_id, status, run_at, priority DESC)
     WHERE status IN ('queued','scheduled');
 
--- Index for monitoring / explorer
 CREATE INDEX idx_jobs_status ON jobs (status, created_at DESC);
 CREATE INDEX idx_jobs_batch  ON jobs (batch_id) WHERE batch_id IS NOT NULL;
 CREATE INDEX idx_jobs_queue_created ON jobs (queue_id, created_at DESC);
 
--- ──────────────────────────────────────────────────────────────────
--- WORKERS
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE workers (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id        UUID        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -129,16 +117,12 @@ CREATE TABLE workers (
     last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Add FK now that workers table exists
 ALTER TABLE jobs ADD CONSTRAINT fk_jobs_worker
     FOREIGN KEY (claimed_by) REFERENCES workers(id) ON DELETE SET NULL;
 
 CREATE INDEX idx_workers_project    ON workers (project_id, status);
 CREATE INDEX idx_workers_heartbeat  ON workers (last_heartbeat_at) WHERE status = 'active';
 
--- ──────────────────────────────────────────────────────────────────
--- JOB EXECUTIONS (one row per attempt)
--- ──────────────────────────────────────────────────────────────────
 CREATE TYPE execution_status AS ENUM ('running','completed','failed','timed_out','cancelled');
 
 CREATE TABLE job_executions (
@@ -158,9 +142,6 @@ CREATE TABLE job_executions (
 CREATE INDEX idx_executions_job    ON job_executions (job_id, attempt_number DESC);
 CREATE INDEX idx_executions_worker ON job_executions (worker_id, started_at DESC);
 
--- ──────────────────────────────────────────────────────────────────
--- WORKER HEARTBEATS (time-series; partition in prod if needed)
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE worker_heartbeats (
     id              BIGSERIAL   PRIMARY KEY,
     worker_id       UUID        NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
@@ -172,9 +153,6 @@ CREATE TABLE worker_heartbeats (
 
 CREATE INDEX idx_heartbeats_worker ON worker_heartbeats (worker_id, heartbeat_at DESC);
 
--- ──────────────────────────────────────────────────────────────────
--- JOB LOGS
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE job_logs (
     id           BIGSERIAL   PRIMARY KEY,
     job_id       UUID        NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -188,9 +166,6 @@ CREATE TABLE job_logs (
 CREATE INDEX idx_logs_job    ON job_logs (job_id, logged_at DESC);
 CREATE INDEX idx_logs_exec   ON job_logs (execution_id) WHERE execution_id IS NOT NULL;
 
--- ──────────────────────────────────────────────────────────────────
--- DEAD LETTER QUEUE
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE dead_letter_queue (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id      UUID        NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
@@ -198,16 +173,13 @@ CREATE TABLE dead_letter_queue (
     final_error TEXT,
     attempts    INT         NOT NULL DEFAULT 0,
     moved_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    resolved_at TIMESTAMPTZ,                        -- set when retried/discarded
+    resolved_at TIMESTAMPTZ,
     resolved_by UUID        REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_dlq_queue   ON dead_letter_queue (queue_id, moved_at DESC);
 CREATE INDEX idx_dlq_pending ON dead_letter_queue (moved_at DESC) WHERE resolved_at IS NULL;
 
--- ──────────────────────────────────────────────────────────────────
--- REFRESH TOKENS
--- ──────────────────────────────────────────────────────────────────
 CREATE TABLE refresh_tokens (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -219,9 +191,6 @@ CREATE TABLE refresh_tokens (
 
 CREATE INDEX idx_tokens_user ON refresh_tokens (user_id, expires_at);
 
--- ──────────────────────────────────────────────────────────────────
--- updated_at trigger helper
--- ──────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;

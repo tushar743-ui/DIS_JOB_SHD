@@ -147,8 +147,6 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = "scheduled"
 	}
 
-	// A recurring job with an explicit first run keeps that time: recording it as
-	// next_run_at stops the scheduler from overwriting it with the next cron tick.
 	var nextRunAt *time.Time
 	if status == "scheduled" && req.CronExpression != nil {
 		nextRunAt = &runAt
@@ -166,7 +164,6 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		nextRunAt,
 	).Scan(&jobID)
 	if err != nil {
-		// pgx returns pgx.ErrNoRows when ON CONFLICT DO NOTHING suppresses the INSERT
 		if err.Error() == "no rows in result set" {
 			writeError(w, http.StatusConflict, "duplicate idempotency_key")
 			return

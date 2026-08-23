@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// setRequired sets the vars Load() refuses to start without, so each test can
-// focus on the one field it cares about.
 func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://user:pw@localhost:5432/db")
@@ -35,7 +33,6 @@ func TestLoadUsesDefaultsForOptionalVars(t *testing.T) {
 	if cfg.RefreshExpiry != 168*time.Hour {
 		t.Errorf("RefreshExpiry = %v, want 168h", cfg.RefreshExpiry)
 	}
-	// Defaulting to production matters: an unset ENV must not enable dev behaviour.
 	if cfg.Env != "production" {
 		t.Errorf("Env = %q, want %q", cfg.Env, "production")
 	}
@@ -71,8 +68,6 @@ func TestLoadPrefersEnvOverDefaults(t *testing.T) {
 	}
 }
 
-// An empty value must be treated as unset, otherwise `PORT=` in a .env silently
-// binds the server to ":".
 func TestGetEnvTreatsEmptyAsUnset(t *testing.T) {
 	t.Setenv("SOME_OPTIONAL_KEY", "")
 	if got := getEnv("SOME_OPTIONAL_KEY", "fallback"); got != "fallback" {

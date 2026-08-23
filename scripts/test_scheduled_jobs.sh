@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Scheduled-job test suite: delayed jobs, cron jobs, and every action that can be
-# taken on them (promote, cancel, retry, delete, DLQ round-trip).
-#
-# Needs the stack running (./scripts/dev.sh) and credentials in .env.
 
 set -uo pipefail
 
@@ -25,7 +21,6 @@ dim()   { echo -e "\033[2m$*\033[0m"; }
 ok()   { PASS=$((PASS+1)); green "  [PASS] $1"; }
 fail() { FAIL=$((FAIL+1)); FAILURES+=("$1 - $2"); red "  [FAIL] $1 - $2"; }
 
-# req METHOD PATH [BODY] -> sets CODE and BODY_OUT
 req() {
   local method="$1" path="$2" body="${3:-}" out
   if [[ -n "$body" ]]; then
@@ -39,14 +34,13 @@ req() {
   BODY_OUT="${out%$'\n'*}"
 }
 
-expect_code() {  # label expected
+expect_code() {
   if [[ "$CODE" == "$2" ]]; then ok "$1 (HTTP $CODE)"
   else fail "$1" "expected HTTP $2, got $CODE — $(head -c 200 <<<"$BODY_OUT")"; fi
 }
 
 job_status() { req GET "/jobs/$1"; jq -r '.status' <<<"$BODY_OUT"; }
 
-# wait_status JOB_ID TIMEOUT STATUS... -> 0 when the job reaches one of STATUS
 wait_status() {
   local id="$1" timeout="$2"; shift 2
   local deadline=$((SECONDS + timeout)) s
@@ -75,7 +69,6 @@ QUEUE=$(curl -s -H "Authorization: Bearer $TOKEN" "$API/projects/$PROJECT/queues
 [[ -n "$QUEUE" && "$QUEUE" != "null" ]] || { red "no queue found in project $PROJECT"; exit 1; }
 dim "  queue $QUEUE"
 
-# new_job JSON -> sets JOB_ID (plus CODE/BODY_OUT from the create call)
 new_job() {
   req POST "/queues/$QUEUE/jobs" "$1"
   JOB_ID=$(jq -r '.id // empty' <<<"$BODY_OUT")
@@ -206,7 +199,6 @@ echo ""
 echo "=== 11. CRON — cancel and purge a recurring job ==="
 req DELETE "/jobs/$J6/purge"
 expect_code "purge the 10s cron job" 200
-# An hourly job sits in 'scheduled' between runs, so cancel is not racing a run.
 new_job '{"type":"scheduled_cleanup","cron_expression":"0 0 * * * *"}'; J8=$JOB_ID
 wait_status "$J8" 45 scheduled >/dev/null
 req DELETE "/jobs/$J8"
@@ -232,7 +224,7 @@ echo "=== 13. CRON — an explicit first run time is honoured ==="
 FIRST=$(iso_in 1800)
 new_job "{\"type\":\"scheduled_cleanup\",\"cron_expression\":\"*/10 * * * * *\",\"scheduled_at\":\"$FIRST\"}"; J9=$JOB_ID
 expect_code "create cron job with scheduled_at" 201
-sleep 7   # give the scheduler a tick to (not) overwrite it
+sleep 7
 req GET "/jobs/$J9"
 RUNAT=$(jq -r '.run_at' <<<"$BODY_OUT")
 DELTA=$(( $(date -d "$RUNAT" +%s) - $(date -d "$FIRST" +%s) ))

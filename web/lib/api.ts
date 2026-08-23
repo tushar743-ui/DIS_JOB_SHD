@@ -15,19 +15,14 @@ type TokenListener = (access: string, refresh: string) => void;
 let onTokens: TokenListener | null = null;
 let onAuthLost: (() => void) | null = null;
 
-/** Called after a successful rotation so the store can persist the new pair. */
 export function onTokensRefreshed(cb: TokenListener) {
   onTokens = cb;
 }
 
-/** Called when the session is unrecoverable and the user must sign in again. */
 export function onAuthFailure(cb: () => void) {
   onAuthLost = cb;
 }
 
-// The API revokes a refresh token the instant it is redeemed, so two parallel
-// refreshes would leave the second holding a dead token. Everyone that hits a
-// 401 waits on this one in-flight attempt instead.
 let refreshing: Promise<string | null> | null = null;
 
 function refreshAccessToken(): Promise<string | null> {
@@ -87,8 +82,6 @@ async function req<T>(path: string, init: RequestInit = {}, retry = true): Promi
 }
 
 export const auth = {
-  // Credential endpoints answer 401 for bad input, which must not be mistaken
-  // for an expired session, so they opt out of the refresh-and-retry path.
   login: (email: string, password: string) =>
     req<{ access_token: string; refresh_token: string; user_id: string; name: string }>(
       "/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false

@@ -28,8 +28,6 @@ export const STATUS_DOT: Record<string, string> = {
 
 export function fmtDuration(ms?: number | null): string {
   if (ms == null) return "–";
-  // Averages come back from the API as floats, so round rather than printing
-  // every digit of e.g. 30.402843601895736.
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;

@@ -1,32 +1,25 @@
-# Secrets
 .env
 .env.local
 .env.*.local
 
-# Claude / AI tooling
 claude.md
 .claude/
 .impeccable/
 skills-lock.json
 
-# Go build outputs
 bin/
 vendor/
 *.test
 *.out
 
-# Next.js
 web/.next/
 web/out/
 web/node_modules/
 web/.turbo/
 
-# Logs
 *.log
 
-# OS
 .DS_Store
 Thumbs.db
 
-# dev.sh per-service logs
 .dev/

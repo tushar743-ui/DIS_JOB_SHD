@@ -47,8 +47,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-// WORKER_QUEUES is comma separated and people space it out for readability, so
-// each name has to come back trimmed or the poller queries a queue named " email".
 func TestLoadParsesQueueNames(t *testing.T) {
 	tests := []struct {
 		name string

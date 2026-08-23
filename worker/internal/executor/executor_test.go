@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// ─── calcDelay unit tests (no DB) ────────────────────────────────────────────
-
 func TestCalcDelay_NoPolicy_ExponentialBackoff(t *testing.T) {
 	e := &Executor{}
 	job := &Job{RetryPolicy: nil}
@@ -17,11 +15,11 @@ func TestCalcDelay_NoPolicy_ExponentialBackoff(t *testing.T) {
 		attempt int
 		wantMax time.Duration
 	}{
-		{1, 2 * time.Second},    // 2^0 = 1s
-		{2, 3 * time.Second},    // 2^1 = 2s
-		{3, 5 * time.Second},    // 2^2 = 4s
-		{4, 9 * time.Second},    // 2^3 = 8s
-		{10, 5*time.Minute + 1}, // capped at 5m
+		{1, 2 * time.Second},
+		{2, 3 * time.Second},
+		{3, 5 * time.Second},
+		{4, 9 * time.Second},
+		{10, 5*time.Minute + 1},
 	}
 	for _, c := range cases {
 		d := e.calcDelay(job, c.attempt)
@@ -65,11 +63,11 @@ func TestCalcDelay_Linear(t *testing.T) {
 		attempt int
 		want    time.Duration
 	}{
-		{1, 1 * time.Second}, // 1000 * 1 = 1000ms
-		{2, 2 * time.Second}, // 1000 * 2 = 2000ms
-		{3, 3 * time.Second}, // 1000 * 3 = 3000ms
-		{5, 5 * time.Second}, // 1000 * 5 = 5000ms (at cap)
-		{6, 5 * time.Second}, // capped at MaxDelayMs
+		{1, 1 * time.Second},
+		{2, 2 * time.Second},
+		{3, 3 * time.Second},
+		{5, 5 * time.Second},
+		{6, 5 * time.Second},
 	}
 	for _, c := range cases {
 		d := e.calcDelay(job, c.attempt)
@@ -94,13 +92,13 @@ func TestCalcDelay_Exponential(t *testing.T) {
 		attempt int
 		want    time.Duration
 	}{
-		{1, 500 * time.Millisecond},    // 500ms * 2^0 = 500ms
-		{2, 1000 * time.Millisecond},   // 500ms * 2^1 = 1000ms
-		{3, 2000 * time.Millisecond},   // 500ms * 2^2 = 2000ms
-		{4, 4000 * time.Millisecond},   // 500ms * 2^3 = 4000ms
-		{5, 8000 * time.Millisecond},   // 500ms * 2^4 = 8000ms
-		{6, 16000 * time.Millisecond},  // capped at 16s
-		{10, 16000 * time.Millisecond}, // still capped
+		{1, 500 * time.Millisecond},
+		{2, 1000 * time.Millisecond},
+		{3, 2000 * time.Millisecond},
+		{4, 4000 * time.Millisecond},
+		{5, 8000 * time.Millisecond},
+		{6, 16000 * time.Millisecond},
+		{10, 16000 * time.Millisecond},
 	}
 	for _, c := range cases {
 		d := e.calcDelay(job, c.attempt)
@@ -121,8 +119,6 @@ func TestCalcDelay_DefaultFallback_CapAt5min(t *testing.T) {
 		}
 	}
 }
-
-// ─── Handler registration and lookup ─────────────────────────────────────────
 
 func TestRegister_And_Lookup(t *testing.T) {
 	e := &Executor{handlers: map[string]Handler{}}
@@ -150,7 +146,7 @@ func TestRegister_And_Lookup(t *testing.T) {
 func TestRegister_Overwrite(t *testing.T) {
 	e := &Executor{handlers: map[string]Handler{}}
 	e.Register("job", func(ctx context.Context, job *Job) error { return errors.New("v1") })
-	e.Register("job", func(ctx context.Context, job *Job) error { return nil }) // overwrite
+	e.Register("job", func(ctx context.Context, job *Job) error { return nil })
 
 	e.mu.Lock()
 	h := e.handlers["job"]
@@ -161,8 +157,6 @@ func TestRegister_Overwrite(t *testing.T) {
 	}
 }
 
-// ─── Semaphore / concurrency ──────────────────────────────────────────────────
-
 func TestSemChan_RespectsCapacity(t *testing.T) {
 	concurrency := 3
 	e := &Executor{sem: make(chan struct{}, concurrency)}
@@ -170,11 +164,6 @@ func TestSemChan_RespectsCapacity(t *testing.T) {
 		t.Fatalf("expected semaphore capacity=%d, got %d", concurrency, cap(e.SemChan()))
 	}
 }
-
-// ─── run() - unregistered handler ────────────────────────────────────────────
-
-// This test calls run() which needs a real DB for the execution record.
-// It is kept here to document the behavior; integration tests cover it fully.
 
 func TestCalcDelay_UnknownStrategy_FallsBackToExponential(t *testing.T) {
 	e := &Executor{}
@@ -186,7 +175,6 @@ func TestCalcDelay_UnknownStrategy_FallsBackToExponential(t *testing.T) {
 			Multiplier:     2.0,
 		},
 	}
-	// unknown strategy takes the default (exponential) branch
 	d1 := e.calcDelay(job, 1)
 	d2 := e.calcDelay(job, 2)
 	if d1 <= 0 || d2 <= 0 {
@@ -197,11 +185,8 @@ func TestCalcDelay_UnknownStrategy_FallsBackToExponential(t *testing.T) {
 	}
 }
 
-// ─── Drain ───────────────────────────────────────────────────────────────────
-
 func TestDrain_ReturnsWhenDone(t *testing.T) {
 	e := &Executor{sem: make(chan struct{}, 2)}
-	// nothing running - drain should return immediately
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	e.Drain(ctx)
@@ -212,12 +197,12 @@ func TestDrain_ReturnsWhenDone(t *testing.T) {
 
 func TestDrain_RespectsContextTimeout(t *testing.T) {
 	e := &Executor{sem: make(chan struct{}, 1)}
-	e.wg.Add(1) // simulate a stuck job
+	e.wg.Add(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	e.Drain(ctx)
 	if ctx.Err() == nil {
 		t.Fatal("Drain should have timed out with a stuck job")
 	}
-	e.wg.Done() // cleanup
+	e.wg.Done()
 }

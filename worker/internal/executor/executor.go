@@ -97,8 +97,6 @@ func (e *Executor) run(job *Job) {
 
 	execID, err := e.startExecution(ctx, job)
 	if err != nil {
-		// The job is already marked 'claimed'; drop the claim so it is picked up
-		// again instead of sitting in 'claimed' forever.
 		log.Error().Err(err).Str("job_id", job.ID).Msg("failed to start execution record")
 		e.releaseClaim(job, err)
 		return
@@ -134,9 +132,6 @@ func (e *Executor) run(job *Job) {
 }
 
 func (e *Executor) startExecution(ctx context.Context, job *Job) (string, error) {
-	// attempt_number is derived from the executions already on record rather than
-	// from jobs.attempt_count: a retry (API or DLQ) resets attempt_count to 0, and
-	// reusing a number would collide with UNIQUE (job_id, attempt_number).
 	var execID string
 	err := e.db.QueryRow(ctx,
 		`INSERT INTO job_executions (job_id, worker_id, attempt_number, status)
@@ -155,7 +150,6 @@ func (e *Executor) startExecution(ctx context.Context, job *Job) (string, error)
 	return execID, nil
 }
 
-// releaseClaim returns a job that could not be started to the queue.
 func (e *Executor) releaseClaim(job *Job, cause error) {
 	if _, err := e.db.Exec(context.Background(),
 		`UPDATE jobs SET status='queued', claimed_by=NULL, claimed_at=NULL,
@@ -172,8 +166,6 @@ func (e *Executor) handleSuccess(ctx context.Context, job *Job, execID string, d
 		durationMs, execID)
 
 	if job.CronExpression != nil {
-		// Compute the next fire time here so the job never shows a placeholder
-		// run_at between finishing and the scheduler's next tick.
 		next, cronErr := NextCronRun(*job.CronExpression, time.Now())
 		if cronErr != nil {
 			e.db.Exec(ctx,
@@ -211,8 +203,6 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='dead', last_error=$1, updated_at=now(), claimed_by=NULL WHERE id=$2`,
 			errMsg, job.ID)
-		// A job can reach the DLQ more than once (retry -> fails again). Refresh the
-		// existing row and clear its resolution instead of dropping the new failure.
 		e.db.Exec(ctx,
 			`INSERT INTO dead_letter_queue (job_id, queue_id, final_error, attempts)
 			 VALUES ($1,$2,$3,$4)
@@ -227,7 +217,6 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 	} else {
 		delay := e.calcDelay(job, nextAttempt)
 		runAt := time.Now().Add(delay)
-		// Set 'failed' momentarily to record the failure state, then schedule retry
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='queued', last_error=$1, run_at=$2, updated_at=now(), claimed_by=NULL WHERE id=$3`,
 			errMsg, runAt, job.ID)
@@ -255,7 +244,7 @@ func (e *Executor) calcDelay(job *Job, attempt int) time.Duration {
 			d = time.Duration(rp.MaxDelayMs) * time.Millisecond
 		}
 		return d
-	default: // exponential
+	default:
 		d := float64(rp.InitialDelayMs)
 		for i := 1; i < attempt; i++ {
 			d *= rp.Multiplier
