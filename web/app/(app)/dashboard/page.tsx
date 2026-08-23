@@ -19,7 +19,6 @@ export default function DashboardPage() {
 
   const { data: metrics, error: metricsError, mutate: refetchMetrics } = useProjectMetrics(projectId);
   const { data: queueList } = useQueues(projectId);
-  const { data: runningJobs } = useAllJobs(projectId, "running", true);
   const { data: allJobs } = useAllJobs(projectId);
   const { data: primaryMetrics } = useQueueMetrics(queueList?.[0]?.id ?? null);
 
@@ -35,6 +34,7 @@ export default function DashboardPage() {
 
   const cards = useMemo<SectionCard[]>(() => {
     const totalJobs = Object.values(totals).reduce((a, b) => a + b, 0);
+    const running = (totals.running ?? 0) + (totals.claimed ?? 0);
     const completed = totals.completed ?? 0;
     const failed = (totals.failed ?? 0) + (totals.dead ?? 0);
     const finished = completed + failed;
@@ -58,9 +58,9 @@ export default function DashboardPage() {
       },
       {
         label: "Running Now",
-        value: (runningJobs?.length ?? 0).toLocaleString(),
+        value: running.toLocaleString(),
         headline: `${metrics?.active_workers ?? 0} active workers`,
-        detail: "Live count, polled every 2s",
+        detail: "Running plus claimed, refreshed every 2s",
       },
       {
         label: "Success Rate",
@@ -77,7 +77,7 @@ export default function DashboardPage() {
         detail: "Mean execution time over 24h",
       },
     ];
-  }, [totals, primaryMetrics, throughput, runningJobs, metrics, queueList]);
+  }, [totals, primaryMetrics, throughput, metrics, queueList]);
 
   if (metricsError) return <ErrorState onRetry={() => refetchMetrics()} />;
   if (!projectId)

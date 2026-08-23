@@ -20,3 +20,22 @@ export function retryHint(status: string): string {
     ? "Re-enqueue with a reset attempt count"
     : `Only failed, dead or cancelled jobs can be retried - this one is ${status}`;
 }
+
+export type JobAction = "retry" | "cancel" | "delete";
+
+/**
+ * Optimistic cache transform: applies an action's expected outcome to a job
+ * list so the UI updates on click rather than after the round-trip.
+ */
+export function applyJobAction<T extends { id: string; status: string; attempt_count: number }>(
+  action: JobAction,
+  ids: Set<string>
+) {
+  return (current: T[] | undefined): T[] =>
+    (current ?? []).flatMap((job) => {
+      if (!ids.has(job.id)) return [job];
+      if (action === "delete") return [];
+      if (action === "retry") return [{ ...job, status: "queued", attempt_count: 0 }];
+      return [{ ...job, status: "cancelled" }];
+    });
+}

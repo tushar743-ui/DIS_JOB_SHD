@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   flexRender, getCoreRowModel, useReactTable, type ColumnDef, type RowSelectionState,
@@ -13,7 +13,7 @@ import { JobStateBadge, StateDot } from "@/components/job-state-badge";
 import { formatElapsed, useElapsedTime } from "@/hooks/use-elapsed-time";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
 import { reportError } from "@/lib/errors";
-import { canCancel, canRetry } from "@/lib/job-actions";
+import { canCancel, canRetry, applyJobAction, type JobAction } from "@/lib/job-actions";
 import { CreateJobDialog } from "@/components/jobs/create-job-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +95,10 @@ export default function JobExplorerPage() {
   }, [data, queueId, search]);
 
   const page = useMemo(() => filtered.slice(cursor, cursor + pageSize), [filtered, cursor, pageSize]);
+
+  // columns are memoized before runAction exists; the ref keeps row handlers
+  // pointing at the latest implementation without rebuilding the table.
+  const runActionRef = useRef<(action: JobAction, targets: JobRow[]) => void>(() => {});
 
   const columns = useMemo<ColumnDef<JobRow>[]>(
     () => [
@@ -201,27 +205,18 @@ export default function JobExplorerPage() {
               <DropdownMenuItem onClick={() => router.push(`/jobs/${row.original.id}`)}>View details</DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!canRetry(row.original.status)}
-                onClick={async () => {
-                  try { await jobsApi.retry(row.original.id); mutate(); }
-                  catch (e) { reportError(e, "Failed to retry job"); }
-                }}
+                onClick={() => runActionRef.current("retry", [row.original])}
               >
                 Retry
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!canCancel(row.original.status)}
-                onClick={async () => {
-                  try { await jobsApi.cancel(row.original.id); mutate(); }
-                  catch (e) { reportError(e, "Failed to cancel job"); }
-                }}
+                onClick={() => runActionRef.current("cancel", [row.original])}
               >
                 Cancel
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={async () => {
-                  try { await jobsApi.remove(row.original.id); mutate(); }
-                  catch (e) { reportError(e, "Failed to delete job"); }
-                }}
+                onClick={() => runActionRef.current("delete", [row.original])}
               >
                 Delete
               </DropdownMenuItem>
@@ -231,7 +226,7 @@ export default function JobExplorerPage() {
         size: 40,
       },
     ],
-    [router, mutate]
+    [router]
   );
 
   const table = useReactTable({
@@ -249,20 +244,39 @@ export default function JobExplorerPage() {
   const retryable = selectedJobs.filter((j) => canRetry(j.status));
   const cancellable = selectedJobs.filter((j) => canCancel(j.status));
 
-  async function bulk(action: "retry" | "cancel" | "delete") {
-    const targets =
-      action === "retry" ? retryable : action === "cancel" ? cancellable : selectedJobs;
+  // Single entry point for row and bulk actions: the cache is updated on click
+  // and rolled back if the request fails, so the click never waits on the network.
+  async function runAction(action: JobAction, targets: JobRow[]) {
     if (!targets.length) {
       reportError(new Error(`No selected job is eligible to ${action}`), `Nothing to ${action}`);
       return;
     }
+    const ids = new Set(targets.map((j) => j.id));
+    const optimistic = applyJobAction<JobRow>(action, ids);
     const fn =
       action === "retry" ? jobsApi.retry : action === "cancel" ? jobsApi.cancel : jobsApi.remove;
-    const results = await Promise.allSettled(targets.map((j) => fn(j.id)));
-    const failures = results.filter((r) => r.status === "rejected").length;
-    if (failures) reportError(new Error(`${failures} of ${targets.length} failed`), `Bulk ${action} incomplete`);
+    try {
+      await mutate(
+        async (current?: JobRow[]) => {
+          const results = await Promise.allSettled(targets.map((j) => fn(j.id)));
+          const failures = results.filter((r) => r.status === "rejected").length;
+          if (failures) throw new Error(`${failures} of ${targets.length} failed`);
+          return optimistic(current);
+        },
+        { optimisticData: optimistic, rollbackOnError: true, revalidate: true }
+      );
+    } catch (e) {
+      reportError(e, targets.length > 1 ? `Bulk ${action} incomplete` : `Failed to ${action} job`);
+    }
+  }
+
+  runActionRef.current = runAction;
+
+  async function bulk(action: JobAction) {
+    const targets =
+      action === "retry" ? retryable : action === "cancel" ? cancellable : selectedJobs;
     setSelection({});
-    mutate();
+    await runAction(action, targets);
   }
 
   if (error) return <ErrorState onRetry={() => mutate()} />;
@@ -390,6 +404,7 @@ export default function JobExplorerPage() {
                   <tr
                     key={row.id}
                     onClick={() => router.push(`/jobs/${row.original.id}`)}
+                    onMouseEnter={() => router.prefetch(`/jobs/${row.original.id}`)}
                     className="h-12 cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-accent/40"
                   >
                     {row.getVisibleCells().map((cell) => (

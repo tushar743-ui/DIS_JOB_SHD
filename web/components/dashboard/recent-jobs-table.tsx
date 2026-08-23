@@ -107,6 +107,7 @@ export function RecentJobsTable({ jobs }: { jobs: JobRow[] }) {
                       <TableRow
                         key={job.id}
                         onClick={() => router.push(`/jobs/${job.id}`)}
+                        onMouseEnter={() => router.prefetch(`/jobs/${job.id}`)}
                         className="cursor-pointer"
                       >
                         <TableCell className="font-medium">{job.type}</TableCell>
