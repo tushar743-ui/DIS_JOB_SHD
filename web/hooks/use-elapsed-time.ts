@@ -53,20 +53,20 @@ export function useNow(): number {
 
 export function useElapsedTime(startedAt?: string | null, stoppedAt?: string | null): string {
   const now = useNow();
-  if (!startedAt) return "—";
+  if (!startedAt) return "-";
   const start = new Date(startedAt).getTime();
-  if (Number.isNaN(start)) return "—";
-  if (!now) return "—";
+  if (Number.isNaN(start)) return "-";
+  if (!now) return "-";
   const end = stoppedAt ? new Date(stoppedAt).getTime() : now;
   return formatElapsed(Math.floor((end - start) / 1000));
 }
 
 export function useCountdown(target?: string | null): string {
   const now = useNow();
-  if (!target) return "—";
+  if (!target) return "-";
   const t = new Date(target).getTime();
-  if (Number.isNaN(t)) return "—";
-  if (!now) return "—";
+  if (Number.isNaN(t)) return "-";
+  if (!now) return "-";
   const diff = Math.floor((t - now) / 1000);
   return diff <= 0 ? "due now" : `in ${formatElapsed(diff)}`;
 }

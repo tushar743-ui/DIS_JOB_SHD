@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
+  Bar, BarChart, CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
 } from "recharts";
+import { ThroughputChart } from "@/components/dashboard/throughput-chart";
 import { useAuthStore } from "@/lib/auth-store";
 import { useQueues, useProjectMetrics, useWorkers, useAllJobs, useQueueMetrics } from "@/hooks/use-data";
 import { ChartSkeleton } from "@/components/states";
@@ -101,23 +102,11 @@ export default function AnalyticsPage() {
 
       <BlurFade delay={0.05}>
         <div className="grid gap-6 lg:grid-cols-2">
-          <ChartCard title="Job Throughput" subtitle={`Enqueued vs completed vs failed · ${range}`}>
-            {points.length === 0 ? <ChartSkeleton /> : (
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="t" tick={AXIS} tickLine={false} axisLine={false} minTickGap={24} />
-                  <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} />
-                  <RTooltip contentStyle={TOOLTIP} />
-                  <Area type="monotone" dataKey="enqueued" stroke="hsl(var(--state-queued))" fill="hsl(var(--state-queued) / 0.15)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="completed" stroke="hsl(var(--state-completed))" fill="hsl(var(--state-completed) / 0.15)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="failed" stroke="hsl(var(--state-failed))" fill="hsl(var(--state-failed) / 0.15)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+          <ChartCard title="Job Throughput" subtitle={`Completed per hour · ${range}`}>
+            {points.length === 0 ? <ChartSkeleton /> : <ThroughputChart data={points} />}
           </ChartCard>
 
-          <ChartCard title="Queue Depth Over Time" subtitle="Queued jobs per queue — spot backlogs early">
+          <ChartCard title="Queue Depth Over Time" subtitle="Queued jobs per queue - spot backlogs early">
             {depth.length === 0 ? <ChartSkeleton /> : (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={depth} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
@@ -150,7 +139,7 @@ export default function AnalyticsPage() {
             )}
           </ChartCard>
 
-          <ChartCard title="Retry Rate by Job Kind" subtitle="Highest first — flags flaky job types">
+          <ChartCard title="Retry Rate by Job Kind" subtitle="Highest first - flags flaky job types">
             {retryRate.length === 0 ? <ChartSkeleton /> : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={retryRate} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 8 }}>

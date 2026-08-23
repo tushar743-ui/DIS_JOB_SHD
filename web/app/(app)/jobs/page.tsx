@@ -10,7 +10,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useAllJobs, useQueues, type JobRow } from "@/hooks/use-data";
 import { jobs as jobsApi } from "@/lib/api";
 import { JobStateBadge, StateDot } from "@/components/job-state-badge";
-import { useElapsedTime } from "@/hooks/use-elapsed-time";
+import { formatElapsed, useElapsedTime } from "@/hooks/use-elapsed-time";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
 import { reportError } from "@/lib/errors";
 import { canCancel, canRetry } from "@/lib/job-actions";
@@ -32,18 +32,37 @@ const STATES = ["all", "queued", "scheduled", "claimed", "running", "completed",
 const PAGE_SIZES = [25, 50, 100];
 
 function argsText(payload: unknown): string {
-  if (payload == null) return "—";
+  if (payload == null) return "-";
   try {
     return typeof payload === "string" ? payload : JSON.stringify(payload);
   } catch {
-    return "—";
+    return "-";
   }
+}
+
+function LiveDuration({ startedAt }: { startedAt?: string | null }) {
+  return <>{useElapsedTime(startedAt, null)}</>;
+}
+
+function StaticDuration({ startedAt, stoppedAt }: { startedAt?: string | null; stoppedAt?: string | null }) {
+  if (!startedAt) return <>-</>;
+  const start = new Date(startedAt).getTime();
+  if (Number.isNaN(start)) return <>-</>;
+  const end = stoppedAt ? new Date(stoppedAt).getTime() : start;
+  return <>{formatElapsed(Math.floor((end - start) / 1000))}</>;
 }
 
 function DurationCell({ job }: { job: JobRow }) {
   const live = job.status === "running" || job.status === "claimed";
-  const text = useElapsedTime(live ? job.updated_at : job.created_at, live ? null : job.completed_at);
-  return <span className="font-mono text-xs tabular-nums">{text}</span>;
+  return (
+    <span className="font-mono text-xs tabular-nums">
+      {live ? (
+        <LiveDuration startedAt={job.updated_at} />
+      ) : (
+        <StaticDuration startedAt={job.created_at} stoppedAt={job.completed_at} />
+      )}
+    </span>
+  );
 }
 
 export default function JobExplorerPage() {
@@ -75,7 +94,7 @@ export default function JobExplorerPage() {
     return rows;
   }, [data, queueId, search]);
 
-  const page = filtered.slice(cursor, cursor + pageSize);
+  const page = useMemo(() => filtered.slice(cursor, cursor + pageSize), [filtered, cursor, pageSize]);
 
   const columns = useMemo<ColumnDef<JobRow>[]>(
     () => [

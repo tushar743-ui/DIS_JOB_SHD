@@ -1,10 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CalendarClock, CheckCircle2, Clock, Play, Timer, XCircle, type LucideIcon } from "lucide-react";
-import { BorderBeam } from "@/components/ui/border-beam";
+import {
+  Ban, CalendarClock, Check, Database, Play, Timer, X, type LucideIcon,
+} from "lucide-react";
 import { formatElapsed, useElapsedTime } from "@/hooks/use-elapsed-time";
 import { fmtRelative } from "@/lib/status";
+import { cn } from "@/lib/utils";
 import type { Job } from "@/lib/api";
 
 interface Step {
@@ -13,13 +15,16 @@ interface Step {
   Icon: LucideIcon;
   token: string;
   at?: string | null;
+  /** Appended after the timestamp, e.g. the "(28.83s)" on a run. */
   detail?: string;
+  /** Steps that only carry a duration, like Wait, hide the timestamp. */
+  durationOnly?: boolean;
   active?: boolean;
 }
 
 function buildSteps(job: Job, runningFor: string): Step[] {
   const steps: Step[] = [
-    { key: "created", label: "Created", Icon: Clock, token: "--state-queued", at: job.created_at },
+    { key: "created", label: "Created", Icon: Database, token: "--state-queued", at: job.created_at },
   ];
 
   if (job.scheduled_at) {
@@ -36,7 +41,7 @@ function buildSteps(job: Job, runningFor: string): Step[] {
 
   steps.push({
     key: "wait", label: "Wait", Icon: Timer, token: "--state-queued",
-    at: job.run_at, detail: formatElapsed(waited),
+    at: job.run_at, detail: formatElapsed(waited), durationOnly: true,
   });
 
   const started = job.status !== "queued" && job.status !== "scheduled";
@@ -50,14 +55,19 @@ function buildSteps(job: Job, runningFor: string): Step[] {
 
   if (job.status === "completed") {
     steps.push({
-      key: "complete", label: "Complete", Icon: CheckCircle2,
+      key: "complete", label: "Complete", Icon: Check,
       token: "--state-completed", at: job.completed_at ?? job.updated_at,
     });
-  } else if (job.status === "failed" || job.status === "dead" || job.status === "cancelled") {
+  } else if (job.status === "cancelled") {
     steps.push({
-      key: "failed", label: job.status === "cancelled" ? "Cancelled" : "Failed", Icon: XCircle,
+      key: "cancelled", label: "Cancelled", Icon: Ban,
+      token: "--state-cancelled", at: job.completed_at ?? job.updated_at,
+    });
+  } else if (job.status === "failed" || job.status === "dead") {
+    steps.push({
+      key: "failed", label: job.status === "dead" ? "Discarded" : "Failed", Icon: X,
       token: job.status === "dead" ? "--state-dlq" : "--state-failed",
-      at: job.completed_at ?? job.updated_at, detail: job.last_error ?? undefined,
+      at: job.completed_at ?? job.updated_at,
     });
   }
 
@@ -71,36 +81,48 @@ export function LifecycleTimeline({ job }: { job: Job }) {
 
   return (
     <ol className="relative">
-      {steps.map((step, i) => (
-        <motion.li
-          key={step.key}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, delay: i * 0.1 }}
-          className="flex gap-3 pb-5 last:pb-0"
-        >
-          <div className="relative flex flex-col items-center">
-            <span
-              className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full"
-              style={{ background: `hsl(var(${step.token}) / 0.15)`, color: `hsl(var(${step.token}))` }}
-            >
-              <step.Icon className="size-4" aria-hidden="true" />
-              {step.active && <BorderBeam size={28} duration={3} colorFrom={`hsl(var(${step.token}))`} colorTo="transparent" />}
-            </span>
-            {i < steps.length - 1 && <span className="mt-1 w-0 flex-1 border-l-2 border-dashed border-border" />}
-          </div>
-
-          <div className="min-w-0 flex-1 pt-1">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <p className="text-sm font-medium tracking-tight">{step.label}</p>
-              <span className="text-[11px] text-muted-foreground">{fmtRelative(step.at)}</span>
-              {step.detail && (
-                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">({step.detail})</span>
+      {steps.map((step, i) => {
+        const color = `hsl(var(${step.token}))`;
+        const timestamp = step.durationOnly ? "" : fmtRelative(step.at);
+        return (
+          <motion.li
+            key={step.key}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: i * 0.08 }}
+            className="flex gap-3 pb-4 last:pb-0"
+          >
+            <div className="flex flex-col items-center">
+              <span
+                className={cn(
+                  "grid size-7 shrink-0 place-items-center rounded-full text-white",
+                  step.active && "animate-pulse"
+                )}
+                style={{ background: color }}
+              >
+                <step.Icon className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
+              </span>
+              {i < steps.length - 1 && (
+                <span className="w-px flex-1" style={{ background: `${color}` , opacity: 0.35 }} />
               )}
             </div>
-          </div>
-        </motion.li>
-      ))}
+
+            <div className="min-w-0 flex-1 pb-1">
+              <p className="text-sm font-medium leading-tight" style={{ color }}>
+                {step.label}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {timestamp}
+                {step.detail && (
+                  <span className="font-mono tabular-nums">
+                    {timestamp ? " " : ""}({step.detail})
+                  </span>
+                )}
+              </p>
+            </div>
+          </motion.li>
+        );
+      })}
     </ol>
   );
 }

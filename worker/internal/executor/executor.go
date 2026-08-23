@@ -86,7 +86,7 @@ func (e *Executor) Drain(ctx context.Context) {
 	select {
 	case <-done:
 	case <-ctx.Done():
-		log.Warn().Msg("drain timeout — some jobs may not have finished")
+		log.Warn().Msg("drain timeout - some jobs may not have finished")
 	}
 }
 

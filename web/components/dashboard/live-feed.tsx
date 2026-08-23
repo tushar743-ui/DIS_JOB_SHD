@@ -10,12 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import type { JobRow } from "@/hooks/use-data";
 
 function argsPreview(payload: unknown): string {
-  if (payload == null) return "—";
+  if (payload == null) return "-";
   try {
     const s = typeof payload === "string" ? payload : JSON.stringify(payload);
     return s.length > 48 ? s.slice(0, 48) + "…" : s;
   } catch {
-    return "—";
+    return "-";
   }
 }
 

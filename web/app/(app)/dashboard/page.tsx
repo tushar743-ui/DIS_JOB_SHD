@@ -9,17 +9,14 @@ import { useProjectMetrics, useAllJobs, useWorkers, useQueues, useQueueMetrics }
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { LiveFeed } from "@/components/dashboard/live-feed";
 import { ThroughputChart } from "@/components/dashboard/throughput-chart";
-import { JobStatesDonut } from "@/components/dashboard/job-states-donut";
+import { JobStatesDonut, buildJobStateSlices } from "@/components/dashboard/job-states-donut";
 import { EmptyState, ErrorState, KpiSkeleton, ChartSkeleton } from "@/components/states";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BlurFade } from "@/components/ui/blur-fade";
-import { stateSpec } from "@/components/job-state-badge";
 import { cn } from "@/lib/utils";
 import { fmtRelative } from "@/lib/status";
 import { useNow } from "@/hooks/use-elapsed-time";
-
-const STATE_ORDER = ["running", "queued", "scheduled", "completed", "failed", "dead"];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -58,16 +55,7 @@ export default function DashboardPage() {
     [primaryMetrics]
   );
 
-  const donut = useMemo(
-    () =>
-      STATE_ORDER.map((state) => ({
-        state,
-        label: stateSpec(state).label,
-        value: totals[state] ?? 0,
-        color: `hsl(var(${stateSpec(state).token}))`,
-      })).filter((d) => d.value > 0),
-    [totals]
-  );
+  const donut = useMemo(() => buildJobStateSlices(totals), [totals]);
 
   const sparkOf = (key: string) =>
     (primaryMetrics?.throughput_24h ?? []).slice(-12).map((p) => (key === "failed" ? p.failed : p.completed));
@@ -114,7 +102,7 @@ export default function DashboardPage() {
           <Card className="rounded-xl p-5 lg:col-span-3">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-tight">Throughput</h2>
-              <span className="text-[11px] text-muted-foreground">last 24h · {queueList?.[0]?.name ?? "—"}</span>
+              <span className="text-[11px] text-muted-foreground">last 24h · {queueList?.[0]?.name ?? "-"}</span>
             </div>
             {throughput.length === 0 ? (
               <EmptyState

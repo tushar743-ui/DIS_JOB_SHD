@@ -34,7 +34,7 @@ export default function DLQPage() {
       <Alert className="rounded-xl border-state-retrying/40 text-state-retrying">
         <AlertTriangle className="size-4" aria-hidden="true" />
         <AlertTitle className="tracking-tight">
-          Dead Letter Queue — {pending.length} job{pending.length === 1 ? "" : "s"} permanently failed
+          Dead Letter Queue - {pending.length} job{pending.length === 1 ? "" : "s"} permanently failed
         </AlertTitle>
         <AlertDescription className="text-muted-foreground">
           These jobs exceeded their max retry attempts. Review the error and retry manually once the cause is fixed.
@@ -84,7 +84,7 @@ export default function DLQPage() {
                         <TooltipTrigger
                           render={
                             <span className="block truncate font-mono text-xs text-destructive">
-                              {e.final_error || "—"}
+                              {e.final_error || "-"}
                             </span>
                           }
                         />

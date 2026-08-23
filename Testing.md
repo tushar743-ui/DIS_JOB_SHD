@@ -1,4 +1,4 @@
-# Testing Report — Distributed Job Scheduling System
+# Testing Report - Distributed Job Scheduling System
 
 **Date:** 2026-08-22  
 **Test runs against:** Neon PostgreSQL (production pooler), Upstash Redis (TLS)  
@@ -10,16 +10,16 @@
 
 ## 1. Bugs Found and Fixed
 
-### Bug 1 — Priority ordering reversed (critical)
+### Bug 1 - Priority ordering reversed (critical)
 **File:** `worker/internal/poller/poller.go`  
 **Commit introduced:** m4  
 **Symptom:** Low-priority jobs (priority=1) were processed before high-priority (priority=9).  
-**Root cause:** `ORDER BY priority ASC` in the SQL claim query — opposite of intended.  
+**Root cause:** `ORDER BY priority ASC` in the SQL claim query - opposite of intended.  
 **Fix:** Changed to `ORDER BY priority DESC, run_at ASC`.  
-**Verified by:** `TestPriorityOrdering` — processes 5 jobs in exact order [9, 7, 5, 3, 1].
+**Verified by:** `TestPriorityOrdering` - processes 5 jobs in exact order [9, 7, 5, 3, 1].
 
-### Bug 2 — Batch job scheduled status not set (correctness)
-**File:** `api/internal/handler/job.go` — `CreateBatch`  
+### Bug 2 - Batch job scheduled status not set (correctness)
+**File:** `api/internal/handler/job.go` - `CreateBatch`  
 **Symptom:** Batch jobs with a future `scheduled_at` were inserted with `status='queued'` instead of `status='scheduled'`, so the scheduler would never promote them at the right time.  
 **Root cause:** Single job `Create` had conditional status logic; `CreateBatch` hardcoded `'queued'`.  
 **Fix:** Added `batchStatus` variable that becomes `'scheduled'` when `scheduled_at > now()`.  
@@ -27,7 +27,7 @@
 
 ---
 
-## 2. Unit Tests — `worker/internal/executor`
+## 2. Unit Tests - `worker/internal/executor`
 
 No database or network required. All 11 tests run in **~61ms**.
 
@@ -52,7 +52,7 @@ go test -v ./worker/internal/executor/...
 
 ---
 
-## 3. API Integration Tests — `api/internal/handler`
+## 3. API Integration Tests - `api/internal/handler`
 
 Real Neon DB + Upstash Redis. Full HTTP router via `httptest.NewServer`. All 34 tests run in **~124 seconds**.
 
@@ -151,7 +151,7 @@ go test -v -tags integration -timeout 180s ./api/internal/handler/...
 
 ---
 
-## 4. Poller Integration Tests — `worker/internal/poller`
+## 4. Poller Integration Tests - `worker/internal/poller`
 
 Real Neon DB. All 5 tests + load test run in ~161 seconds total.
 
@@ -159,7 +159,7 @@ Real Neon DB. All 5 tests + load test run in ~161 seconds total.
 
 | Test | Duration | Result | Details |
 |------|----------|--------|---------|
-| `TestPriorityOrdering` | 14.7s | PASS | Processed order: [9,7,5,3,1] — strictly descending ✓ |
+| `TestPriorityOrdering` | 14.7s | PASS | Processed order: [9,7,5,3,1] - strictly descending ✓ |
 | `TestSkipLocked_NoDuplicateClaims` | 19.1s | PASS | 20 jobs, 5 concurrent workers, 0 double-claims ✓ |
 | `TestScheduler_PromotesScheduledJobs` | 7.7s | PASS | Job promoted from `scheduled` → `queued` within 8s ✓ |
 | `TestFailure_MovesToDLQ` | 11.6s | PASS | `max_attempts=2` job moves to `dead` + DLQ entry ✓ |
@@ -196,7 +196,7 @@ go test -v -tags integration -timeout 150s ./worker/internal/poller/...
 - Priority-based ordering is deterministic with `ORDER BY priority DESC, run_at ASC` and concurrency=1.
 - DLQ flow: job retries exactly `max_attempts` times, then lands in `dead_letter_queue` with `status='dead'`.
 - Scheduler promotes `scheduled` jobs to `queued` within one tick (5s interval).
-- JWT refresh token rotation + replay protection work correctly — reused tokens are blocked.
+- JWT refresh token rotation + replay protection work correctly - reused tokens are blocked.
 - Multi-tenant isolation holds: org membership gates all resource access.
 
 ### Known limitations

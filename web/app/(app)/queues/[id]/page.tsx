@@ -170,7 +170,7 @@ export default function QueueDetailPage() {
               <li key={e.id} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0">
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-xs">{e.job_id.slice(0, 8)}</p>
-                  <p className="truncate font-mono text-[11px] text-destructive">{e.final_error || "—"}</p>
+                  <p className="truncate font-mono text-[11px] text-destructive">{e.final_error || "-"}</p>
                 </div>
                 <span className="shrink-0 text-[11px] text-muted-foreground">{fmtRelative(e.moved_at)}</span>
                 <Button

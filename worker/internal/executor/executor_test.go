@@ -94,12 +94,12 @@ func TestCalcDelay_Exponential(t *testing.T) {
 		attempt int
 		want    time.Duration
 	}{
-		{1, 500 * time.Millisecond},  // 500ms * 2^0 = 500ms
-		{2, 1000 * time.Millisecond}, // 500ms * 2^1 = 1000ms
-		{3, 2000 * time.Millisecond}, // 500ms * 2^2 = 2000ms
-		{4, 4000 * time.Millisecond}, // 500ms * 2^3 = 4000ms
-		{5, 8000 * time.Millisecond}, // 500ms * 2^4 = 8000ms
-		{6, 16000 * time.Millisecond}, // capped at 16s
+		{1, 500 * time.Millisecond},    // 500ms * 2^0 = 500ms
+		{2, 1000 * time.Millisecond},   // 500ms * 2^1 = 1000ms
+		{3, 2000 * time.Millisecond},   // 500ms * 2^2 = 2000ms
+		{4, 4000 * time.Millisecond},   // 500ms * 2^3 = 4000ms
+		{5, 8000 * time.Millisecond},   // 500ms * 2^4 = 8000ms
+		{6, 16000 * time.Millisecond},  // capped at 16s
 		{10, 16000 * time.Millisecond}, // still capped
 	}
 	for _, c := range cases {
@@ -171,7 +171,7 @@ func TestSemChan_RespectsCapacity(t *testing.T) {
 	}
 }
 
-// ─── run() — unregistered handler ────────────────────────────────────────────
+// ─── run() - unregistered handler ────────────────────────────────────────────
 
 // This test calls run() which needs a real DB for the execution record.
 // It is kept here to document the behavior; integration tests cover it fully.
@@ -201,7 +201,7 @@ func TestCalcDelay_UnknownStrategy_FallsBackToExponential(t *testing.T) {
 
 func TestDrain_ReturnsWhenDone(t *testing.T) {
 	e := &Executor{sem: make(chan struct{}, 2)}
-	// nothing running — drain should return immediately
+	// nothing running - drain should return immediately
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	e.Drain(ctx)

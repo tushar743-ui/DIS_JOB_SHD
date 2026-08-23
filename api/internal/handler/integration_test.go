@@ -21,7 +21,7 @@ import (
 	"github.com/tushar/dis-job-queue/api/internal/router"
 )
 
-// shared test state — set up once in TestMain
+// shared test state - set up once in TestMain
 var (
 	testServer    *httptest.Server
 	testClient    *http.Client
@@ -34,7 +34,7 @@ var (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("DATABASE_URL") == "" {
-		fmt.Println("SKIP: DATABASE_URL not set — integration tests require a real database")
+		fmt.Println("SKIP: DATABASE_URL not set - integration tests require a real database")
 		os.Exit(0)
 	}
 
@@ -125,7 +125,7 @@ func assertStatus(t *testing.T, resp *http.Response, want int) {
 	t.Helper()
 	if resp.StatusCode != want {
 		body := readBody(resp)
-		t.Fatalf("expected HTTP %d, got %d — body: %s", want, resp.StatusCode, body)
+		t.Fatalf("expected HTTP %d, got %d - body: %s", want, resp.StatusCode, body)
 	}
 }
 
@@ -176,9 +176,9 @@ func TestAuth_Register_ShortPassword(t *testing.T) {
 
 func TestAuth_Register_MissingFields(t *testing.T) {
 	cases := []map[string]any{
-		{"password": "StrongPass1!", "name": "User"},          // missing email
-		{"email": "x@x.io", "name": "User"},                  // missing password
-		{"email": "x@x.io", "password": "StrongPass1!"},      // missing name
+		{"password": "StrongPass1!", "name": "User"},    // missing email
+		{"email": "x@x.io", "name": "User"},             // missing password
+		{"email": "x@x.io", "password": "StrongPass1!"}, // missing name
 	}
 	for _, c := range cases {
 		resp := mustDo("POST", "/api/v1/auth/register", mustJSON(c), "")
@@ -230,7 +230,7 @@ func TestAuth_RefreshToken_Rotation(t *testing.T) {
 		t.Fatal("expected new access_token after refresh")
 	}
 
-	// replay the original — must be rejected (token rotation)
+	// replay the original - must be rejected (token rotation)
 	ref2 := mustDo("POST", "/api/v1/auth/refresh",
 		mustJSON(map[string]string{"refresh_token": originalRefresh}), "")
 	assertStatus(t, ref2, http.StatusUnauthorized)
@@ -280,7 +280,7 @@ func TestOrg_CRUD(t *testing.T) {
 	get := mustDo("GET", fmt.Sprintf("/api/v1/orgs/%s", orgID), nil, token)
 	assertStatus(t, get, http.StatusOK)
 
-	// list — must include our new org
+	// list - must include our new org
 	list := mustDo("GET", "/api/v1/orgs", nil, token)
 	assertStatus(t, list, http.StatusOK)
 	var orgs []map[string]any
@@ -516,8 +516,8 @@ func TestQueue_PauseResume(t *testing.T) {
 func TestJob_Create_Basic(t *testing.T) {
 	resp := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
 		mustJSON(map[string]any{
-			"type":    "process_order",
-			"payload": map[string]any{"order_id": "ORD-TEST-001"},
+			"type":     "process_order",
+			"payload":  map[string]any{"order_id": "ORD-TEST-001"},
 			"priority": 5,
 		}), adminToken)
 	assertStatus(t, resp, http.StatusCreated)
@@ -656,7 +656,7 @@ func TestJob_Cancel(t *testing.T) {
 }
 
 func TestJob_Cancel_AlreadyRunning_Returns409(t *testing.T) {
-	// cancel a non-existent / already cancelled job — should conflict
+	// cancel a non-existent / already cancelled job - should conflict
 	cr := mustDo("POST", fmt.Sprintf("/api/v1/queues/%s/jobs", testQueueID),
 		mustJSON(map[string]any{"type": "cancel_conflict", "payload": map[string]any{}}), adminToken)
 	var crBody map[string]string
@@ -665,7 +665,7 @@ func TestJob_Cancel_AlreadyRunning_Returns409(t *testing.T) {
 
 	// cancel once
 	mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
-	// cancel again — already cancelled, should 409
+	// cancel again - already cancelled, should 409
 	resp := mustDo("DELETE", fmt.Sprintf("/api/v1/jobs/%s", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusConflict)
 }
@@ -703,7 +703,7 @@ func TestJob_Retry_AlreadyQueued_Returns409(t *testing.T) {
 	mustDecode(cr, &crBody)
 	jobID := crBody["id"]
 
-	// retry a queued job (not failed/dead/cancelled) — must 409
+	// retry a queued job (not failed/dead/cancelled) - must 409
 	resp := mustDo("POST", fmt.Sprintf("/api/v1/jobs/%s/retry", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusConflict)
 }
@@ -774,7 +774,7 @@ func TestJob_Logs(t *testing.T) {
 
 	resp := mustDo("GET", fmt.Sprintf("/api/v1/jobs/%s/logs", jobID), nil, adminToken)
 	assertStatus(t, resp, http.StatusOK)
-	// empty array is fine — job hasn't run yet
+	// empty array is fine - job hasn't run yet
 	var logs []any
 	mustDecode(resp, &logs)
 	_ = logs // just verifying the endpoint works
@@ -829,7 +829,7 @@ func TestWorker_List(t *testing.T) {
 	assertStatus(t, resp, http.StatusOK)
 	var workers []any
 	mustDecode(resp, &workers)
-	// workers may be empty if none are running — just verify shape
+	// workers may be empty if none are running - just verify shape
 	_ = workers
 }
 

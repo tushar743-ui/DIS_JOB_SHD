@@ -47,7 +47,7 @@ export default function WorkerDetailPage() {
     ["Status", stale ? "Dead" : worker.status],
     ["Concurrency", String(worker.concurrency)],
     ["PID", String(worker.pid)],
-    ["Version", worker.version || "—"],
+    ["Version", worker.version || "-"],
     ["Registered", fmtDate(worker.registered_at)],
     ["Last heartbeat", fmtRelative(worker.last_heartbeat_at)],
   ];

@@ -125,7 +125,7 @@ func TestAuthRejects(t *testing.T) {
 //
 // Note this asserts the behaviour, not the implementation: jwt/v5 already
 // refuses none-alg tokens unless the parser opts in, so this still passes if
-// the SigningMethodHMAC guard in Auth is deleted. Keep the guard anyway — it is
+// the SigningMethodHMAC guard in Auth is deleted. Keep the guard anyway - it is
 // the thing that stops an algorithm swap if that library default ever changes.
 func TestAuthRejectsUnsignedToken(t *testing.T) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, &Claims{

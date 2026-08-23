@@ -23,8 +23,8 @@ ok() {
 
 fail() {
   FAIL=$((FAIL+1))
-  RESULTS+=("  [FAIL] $1 — $2")
-  red "  [FAIL] $1 — $2"
+  RESULTS+=("  [FAIL] $1 - $2")
+  red "  [FAIL] $1 - $2"
 }
 
 warn() {
@@ -37,7 +37,7 @@ assert_status() {
   if [ "$actual" = "$expected" ]; then
     ok "$label (HTTP $actual)"
   else
-    fail "$label" "expected HTTP $expected, got $actual — body: $(echo "$body" | head -c 200)"
+    fail "$label" "expected HTTP $expected, got $actual - body: $(echo "$body" | head -c 200)"
   fi
 }
 
@@ -45,7 +45,7 @@ jq_field() { echo "$1" | jq -r "$2" 2>/dev/null || echo ""; }
 
 echo ""
 echo "================================================================"
-echo " DIS-JOB-SD  — Comprehensive Test Suite"
+echo " DIS-JOB-SD  - Comprehensive Test Suite"
 echo " $(date)"
 echo "================================================================"
 echo ""
@@ -55,7 +55,7 @@ echo "=== 1. HEALTH CHECK ==="
 HEALTH=$(curl -sf "$BASE/health" 2>/dev/null || echo '{"ok":false}')
 if echo "$HEALTH" | grep -q '"ok":true'; then ok "API /health"; else fail "API /health" "unreachable"; exit 1; fi
 
-# ─── 2. AUTH — register 10 users ─────────────────────────────────
+# ─── 2. AUTH - register 10 users ─────────────────────────────────
 echo ""
 echo "=== 2. USER REGISTRATION (10 users) ==="
 
@@ -102,7 +102,7 @@ AUTH="Authorization: Bearer $PRIMARY_TOKEN"
 
 # ─── 3. TOKEN REFRESH ─────────────────────────────────────────────
 echo ""
-echo "=== 3. AUTH — TOKEN REFRESH ==="
+echo "=== 3. AUTH - TOKEN REFRESH ==="
 # Register a throwaway user and test refresh
 THROW_RESP=$(curl -s -w "\n%{http_code}" -X POST "$API/auth/register" \
   -H "Content-Type: application/json" \
@@ -134,7 +134,7 @@ if [ -n "$THROW_REFRESH" ] && [ "$THROW_REFRESH" != "null" ]; then
     -d "{\"refresh_token\":\"$THROW_REFRESH\"}" 2>/dev/null)
   REF2_CODE=$(echo "$REF2_RESP" | tail -1)
   if [ "$REF2_CODE" = "401" ]; then
-    ok "Refresh token rotation — replay rejected (401)"
+    ok "Refresh token rotation - replay rejected (401)"
   else
     fail "Refresh token replay protection" "expected 401, got $REF2_CODE"
   fi
@@ -144,7 +144,7 @@ fi
 
 # ─── 4. /auth/me ─────────────────────────────────────────────────
 echo ""
-echo "=== 4. AUTH — GET /me ==="
+echo "=== 4. AUTH - GET /me ==="
 ME_RESP=$(curl -s -w "\n%{http_code}" -H "$AUTH" "$API/auth/me" 2>/dev/null)
 ME_CODE=$(echo "$ME_RESP" | tail -1)
 ME_BODY=$(echo "$ME_RESP" | head -n -1)
@@ -165,7 +165,7 @@ if [ "$ORG_CODE" = "201" ] || [ "$ORG_CODE" = "409" ]; then
     # Already exists, find it
     ORGS_RESP=$(curl -s -H "$AUTH" "$API/orgs" 2>/dev/null)
     ORG_ID=$(echo "$ORGS_RESP" | jq -r '[.[] | select(.slug=="djq-test-org")] | .[0].id' 2>/dev/null)
-    ok "Org creation (already existed — reusing)"
+    ok "Org creation (already existed - reusing)"
   else
     ORG_ID=$(jq_field "$ORG_BODY" ".id")
     ok "Org created (id=$ORG_ID)"
@@ -362,7 +362,7 @@ if [ -n "$DEFAULT_QUEUE" ] && [ "$DEFAULT_QUEUE" != "null" ]; then
   assert_status "Update queue concurrency" "200" "$(echo "$UPD_Q" | tail -1)" ""
 fi
 
-# ─── 9. JOB CREATION — CORE WORKFLOWS ────────────────────────────
+# ─── 9. JOB CREATION - CORE WORKFLOWS ────────────────────────────
 echo ""
 echo "=== 9. JOB CREATION ==="
 
@@ -537,7 +537,7 @@ else
   fail "Worker registration" "only $ACTIVE_COUNT active workers registered"
 fi
 
-# ─── 12. LET WORKERS PROCESS — MONITOR PROGRESS ──────────────────
+# ─── 12. LET WORKERS PROCESS - MONITOR PROGRESS ──────────────────
 echo ""
 echo "=== 12. JOB EXECUTION MONITORING (30s observation) ==="
 
@@ -545,7 +545,7 @@ for round in 1 2 3; do
   sleep 10
   STATS_RESP=$(curl -s -H "$AUTH" "$API/queues/$DEFAULT_QUEUE/stats" 2>/dev/null)
   Q_STATUS=$(echo "$STATS_RESP" | jq -r '.by_status' 2>/dev/null || echo "{}")
-  echo "  Round $round/3 — default queue: $Q_STATUS"
+  echo "  Round $round/3 - default queue: $Q_STATUS"
 done
 
 # Check overall metrics
@@ -587,7 +587,7 @@ if [ -n "$COMP_ID" ] && [ "$COMP_ID" != "null" ]; then
     warn "No execution records found for completed job $COMP_ID"
   fi
 else
-  warn "No completed jobs found yet — workers may still be processing"
+  warn "No completed jobs found yet - workers may still be processing"
 fi
 
 # ─── 15. DEAD LETTER QUEUE ───────────────────────────────────────
@@ -613,9 +613,9 @@ if [ -n "$DLQ_ENTRY" ] && [ "$DLQ_ENTRY" != "null" ]; then
     -H "$AUTH" -H "Content-Type: application/json" \
     -d '{"type":"always_fail","payload":{},"max_attempts":1}' 2>/dev/null)
   AF_JID=$(jq_field "$(echo "$AF_RESP" | head -n -1)" ".id")
-  ok "DLQ has entries — retry workflow verified"
+  ok "DLQ has entries - retry workflow verified"
 else
-  warn "No DLQ entries yet — always_fail jobs may still be retrying"
+  warn "No DLQ entries yet - always_fail jobs may still be retrying"
 fi
 
 # ─── 16. QUEUE METRICS ───────────────────────────────────────────
@@ -638,12 +638,12 @@ for PRIO in 1 3 5 7 9; do
   PID=$(jq_field "$PR" ".id")
   PRIO_IDS+=("$PID:$PRIO")
 done
-ok "Priority jobs created (1,3,5,7,9) — workers should process priority=9 first (ORDER BY priority ASC maps to DESC in schema)"
+ok "Priority jobs created (1,3,5,7,9) - workers should process priority=9 first (ORDER BY priority ASC maps to DESC in schema)"
 
 # ─── 18. PAUSED QUEUE JOB SUBMISSION ────────────────────────────
 echo ""
 echo "=== 18. PAUSED QUEUE BEHAVIOR ==="
-# Pause the reports queue and submit a job — it should accept but not run
+# Pause the reports queue and submit a job - it should accept but not run
 curl -s -X POST "$API/queues/$REPORT_QUEUE/pause" -H "$AUTH" > /dev/null
 PAUSED_JOB=$(curl -s -w "\n%{http_code}" -X POST "$API/queues/$REPORT_QUEUE/jobs" \
   -H "$AUTH" -H "Content-Type: application/json" \
@@ -742,8 +742,8 @@ DF_COMPLETED=$(echo "$DEFAULT_FINAL" | jq -r '.by_status.completed // 0' 2>/dev/
 DF_QUEUED=$(echo "$DEFAULT_FINAL" | jq -r '.by_status.queued // 0' 2>/dev/null)
 DF_DEAD=$(echo "$DEFAULT_FINAL" | jq -r '.by_status.dead // 0' 2>/dev/null)
 
-ok "Final snapshot — workers=$FINAL_WORKERS, completed_24h=$FINAL_COMPLETED"
-ok "Default queue — completed=$DF_COMPLETED, queued=$DF_QUEUED, dead=$DF_DEAD"
+ok "Final snapshot - workers=$FINAL_WORKERS, completed_24h=$FINAL_COMPLETED"
+ok "Default queue - completed=$DF_COMPLETED, queued=$DF_QUEUED, dead=$DF_DEAD"
 
 # ─── CLEANUP: Kill workers ────────────────────────────────────────
 echo ""

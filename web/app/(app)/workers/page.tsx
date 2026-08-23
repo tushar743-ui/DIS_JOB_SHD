@@ -100,7 +100,7 @@ export default function WorkerMonitorPage() {
                       </span>
                     </td>
                     <td className="px-3 font-mono text-xs tabular-nums">
-                      {stale ? "—" : `${Math.min(mine, w.concurrency)} / ${w.concurrency}`}
+                      {stale ? "-" : `${Math.min(mine, w.concurrency)} / ${w.concurrency}`}
                     </td>
                     <td className="px-3 font-mono text-xs text-muted-foreground">{w.pid}</td>
                     <td className="px-3 text-xs">

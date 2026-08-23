@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Ban, Download, RotateCcw, Trash2 } from "lucide-react";
-import { useJob, useJobLogs, useJobExecutions } from "@/hooks/use-data";
+import { useJob, useJobLogs, useJobExecutions, useQueues } from "@/hooks/use-data";
 import { jobs as jobsApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth-store";
 import { JobStateBadge } from "@/components/job-state-badge";
 import { LifecycleTimeline } from "@/components/jobs/lifecycle-timeline";
+import { AttemptsList } from "@/components/jobs/attempts-list";
 import { JsonView } from "@/components/json-view";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorState, TableSkeleton } from "@/components/states";
@@ -14,12 +17,7 @@ import { reportError } from "@/lib/errors";
 import { canCancel, canRetry, cancelHint, retryHint } from "@/lib/job-actions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { fmtDate, fmtDuration, fmtRelative } from "@/lib/status";
+import { fmtRelative } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
 const LEVEL_CLASS: Record<string, string> = {
@@ -30,12 +28,24 @@ const LEVEL_CLASS: Record<string, string> = {
   debug: "text-muted-foreground/70",
 };
 
+/** One cell of the attribute grid: label above, value below. */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-sm font-medium text-foreground">{label}</dt>
+      <dd className="mt-1.5 truncate text-sm text-muted-foreground">{children}</dd>
+    </div>
+  );
+}
+
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const projectId = useAuthStore((s) => s.projectId);
   const { data: job, error, mutate } = useJob(id);
   const { data: logs } = useJobLogs(id);
-  const { data: execs } = useJobExecutions(id);
+  const { data: attempts } = useJobExecutions(id);
+  const { data: queueList } = useQueues(projectId);
   const logRef = useRef<HTMLDivElement>(null);
 
   const running = job?.status === "running" || job?.status === "claimed";
@@ -59,22 +69,16 @@ export default function JobDetailPage() {
   if (error) return <ErrorState onRetry={() => mutate()} />;
   if (!job) return <TableSkeleton rows={6} cols={4} />;
 
-  const meta: [string, React.ReactNode][] = [
-    ["State", <JobStateBadge key="s" state={job.status} />],
-    ["Attempt", `${job.attempt_count} / ${job.max_attempts}`],
-    ["Priority", String(job.priority)],
-    ["Queue", <Badge key="q" variant="outline" className="rounded-full text-[10px]">{job.queue_id.slice(0, 8)}</Badge>],
-    ["Tags", job.tags?.length ? job.tags.join(", ") : "—"],
-    ["Created", fmtRelative(job.created_at)],
-  ];
+  const queueName = queueList?.find((q) => q.id === job.queue_id)?.name ?? job.queue_id;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1400px]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold tracking-tight">{job.type}</h1>
-          <p className="font-mono text-xs text-muted-foreground">ID: {job.id}</p>
+          <h1 className="truncate text-2xl font-semibold tracking-tight">{job.type}</h1>
+          <p className="mt-1 font-mono text-sm text-muted-foreground">ID: {job.id}</p>
         </div>
+
         <div className="flex flex-wrap gap-2">
           <Tooltip>
             <TooltipTrigger
@@ -136,7 +140,7 @@ export default function JobDetailPage() {
               catch (e) { reportError(e, "Failed to delete job"); }
             }}
             trigger={
-              <Button size="sm" variant="destructive" className="rounded-lg" aria-label="Delete job">
+              <Button size="sm" variant="outline" className="rounded-lg text-destructive" aria-label="Delete job">
                 <Trash2 className="size-3.5" aria-hidden="true" /> Delete
               </Button>
             }
@@ -144,76 +148,87 @@ export default function JobDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="space-y-6 lg:col-span-3">
-          <Card className="rounded-xl p-5">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-              {meta.map(([label, value]) => (
-                <div key={label}>
-                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-                  <dd className="mt-1 text-sm">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </Card>
+      <div className="mt-8 grid gap-8 border-t border-border pt-6 lg:grid-cols-2 lg:gap-12">
+        <dl>
+          <div className="grid grid-cols-3 gap-6 border-b border-border pb-5">
+            <Field label="State">
+              <JobStateBadge state={job.status} />
+            </Field>
+            <Field label="Attempt">
+              <span className="font-mono tabular-nums">
+                {job.attempt_count} / {job.max_attempts}
+              </span>
+            </Field>
+            <Field label="Priority">
+              <span className="font-mono tabular-nums">{job.priority}</span>
+            </Field>
+          </div>
 
-          <Card className="rounded-xl p-5">
-            <h2 className="mb-4 text-sm font-semibold tracking-tight">Lifecycle</h2>
-            <LifecycleTimeline job={job} />
-          </Card>
+          <div className="grid grid-cols-2 gap-6 border-b border-border py-5">
+            <Field label="Queue">
+              <Link
+                href={`/queues/${job.queue_id}`}
+                className="font-mono text-state-running hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                {queueName}
+              </Link>
+            </Field>
+            <Field label="Tags">
+              {job.tags?.length ? job.tags.join(", ") : "–"}
+            </Field>
+          </div>
 
-          {(execs?.length ?? 0) > 1 && (
-            <Collapsible defaultOpen>
-              <Card className="rounded-xl p-5">
-                <CollapsibleTrigger
-                  render={
-                    <button className="flex w-full items-center justify-between text-sm font-semibold tracking-tight focus-visible:ring-2 focus-visible:ring-primary">
-                      Retry History ({execs!.length} attempts)
-                    </button>
-                  }
-                />
-                <CollapsibleContent className="mt-3 space-y-2">
-                  {execs!.map((ex) => (
-                    <div key={ex.id} className="flex flex-wrap items-baseline gap-2 border-b border-border pb-2 text-xs last:border-0">
-                      <span className="font-medium">Attempt {ex.attempt_number}</span>
-                      <JobStateBadge state={ex.status} />
-                      <span className="text-muted-foreground">{fmtDate(ex.started_at)}</span>
-                      <span className="font-mono tabular-nums text-muted-foreground">{fmtDuration(ex.duration_ms)}</span>
-                      {ex.error_message && (
-                        <span className="w-full truncate font-mono text-destructive">{ex.error_message}</span>
-                      )}
-                    </div>
-                  ))}
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
-          )}
-        </div>
+          <div className="grid grid-cols-2 gap-6 py-5">
+            <Field label="Created">{fmtRelative(job.created_at)}</Field>
+            <Field label="Batch">
+              {job.batch_id ? (
+                <Link
+                  href={`/jobs/batch/${job.batch_id}`}
+                  className="font-mono text-state-running hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {job.batch_id}
+                </Link>
+              ) : (
+                "–"
+              )}
+            </Field>
+          </div>
+        </dl>
 
-        <div className="space-y-6 lg:col-span-2">
-          <JsonView title="Args" value={job.payload} />
-          <JsonView
-            title="Metadata"
-            value={{
-              idempotency_key: job.idempotency_key ?? null,
-              batch_id: job.batch_id ?? null,
-              cron_expression: job.cron_expression ?? null,
-              timeout_secs: job.timeout_secs,
-              run_at: job.run_at,
-              last_error: job.last_error ?? null,
-            }}
-          />
-        </div>
+        <LifecycleTimeline job={job} />
       </div>
 
-      <Card className="rounded-xl p-5">
-        <div className="mb-3 flex items-center justify-between">
+      <div className="mt-8 grid gap-8 border-t border-border pt-6 lg:grid-cols-2 lg:gap-12">
+        <JsonView title="Args" value={job.payload} />
+        <JsonView
+          title="Metadata"
+          value={{
+            idempotency_key: job.idempotency_key ?? null,
+            batch_id: job.batch_id ?? null,
+            cron_expression: job.cron_expression ?? null,
+            timeout_secs: job.timeout_secs,
+            run_at: job.run_at,
+            last_error: job.last_error ?? null,
+          }}
+        />
+      </div>
+
+      <section className="mt-8 border-t border-border pt-6">
+        <h2 className="mb-4 text-sm font-semibold tracking-tight">Attempts</h2>
+        <AttemptsList attempts={attempts ?? []} />
+      </section>
+
+      <section className="mt-8 border-t border-border pt-6">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-tight">Execution Logs</h2>
           <Button size="sm" variant="outline" onClick={downloadLogs} className="rounded-lg" aria-label="Download logs">
             <Download className="size-3.5" aria-hidden="true" /> Download
           </Button>
         </div>
-        <div ref={logRef} className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs scrollbar-thin">
+        <div
+          ref={logRef}
+          className="max-h-72 overflow-auto rounded-lg border border-border p-3 font-mono text-xs scrollbar-thin"
+        >
           {(logs ?? []).length === 0 ? (
             <p className="text-muted-foreground">No logs recorded for this job.</p>
           ) : (
@@ -226,7 +241,7 @@ export default function JobDetailPage() {
             ))
           )}
         </div>
-      </Card>
+      </section>
     </div>
   );
 }

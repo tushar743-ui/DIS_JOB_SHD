@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export interface DonutChartSegment {
   value: number;
-  color: string; // Should be a valid CSS color (e.g., hsl(var(--primary)))
+  /** Any valid CSS color, e.g. hsl(var(--state-running)) */
+  color: string;
   label: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- keeps the upstream component's open data shape
   [key: string]: any; // Allow other data
@@ -22,8 +23,19 @@ interface DonutChartProps extends React.HTMLAttributes<HTMLDivElement> {
   animationDelayPerSegment?: number;
   highlightOnHover?: boolean;
   centerContent?: React.ReactNode;
+  /** Degrees of empty space between adjacent arcs. Set 0 for a continuous ring. */
+  gapDegrees?: number;
+  /** Depth pass: each arc is drawn as a gradient of its own hue instead of a flat fill. */
+  gradient?: boolean;
+  strokeLinecap?: "butt" | "round";
+  /** Colour of the ring behind the data. */
+  trackColor?: string;
+  /** Highlight driven from outside (a legend, say), matched on segment label. */
+  activeLabel?: string | null;
   /** Callback function when a segment is hovered */
   onSegmentHover?: (segment: DonutChartSegment | null) => void;
+  /** Describes the chart to screen readers; the SVG is decorative without it. */
+  ariaLabel?: string;
 }
 
 const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
@@ -37,7 +49,13 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
       animationDelayPerSegment = 0.05,
       highlightOnHover = true,
       centerContent,
+      gapDegrees = 2,
+      gradient = true,
+      strokeLinecap = "butt",
+      trackColor = "hsl(var(--border) / 0.5)",
+      activeLabel,
       onSegmentHover,
+      ariaLabel,
       className,
       ...props
     },
@@ -54,23 +72,27 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
 
     const radius = size / 2 - strokeWidth / 2;
     const circumference = 2 * Math.PI * radius;
+    const drawn = data.filter((segment) => segment.value > 0);
+    // A lone arc keeps its full sweep: a gap in a single ring reads as missing data.
+    const gap = drawn.length > 1 ? (gapDegrees / 360) * circumference : 0;
+    const gradientId = React.useId();
     let cumulativePercentage = 0;
 
-    // Effect to call the onSegmentHover prop when internal state changes
+    // Kept in a ref so an inline callback prop cannot retrigger the effect every render.
+    const hoverCallback = React.useRef(onSegmentHover);
+    hoverCallback.current = onSegmentHover;
     React.useEffect(() => {
-      onSegmentHover?.(hoveredSegment);
-    }, [hoveredSegment, onSegmentHover]);
+      hoverCallback.current?.(hoveredSegment);
+    }, [hoveredSegment]);
 
-    const handleMouseLeave = () => {
-      setHoveredSegment(null);
-    };
+    const highlighted = activeLabel ?? hoveredSegment?.label ?? null;
 
     return (
       <div
         ref={ref}
         className={cn("relative flex items-center justify-center", className)}
         style={{ width: size, height: size }}
-        onMouseLeave={handleMouseLeave}
+        onMouseLeave={() => setHoveredSegment(null)}
         {...props}
       >
         <svg
@@ -78,31 +100,61 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
           height={size}
           viewBox={`0 0 ${size} ${size}`}
           className="overflow-visible -rotate-90" // Rotate to start at 12 o'clock
+          role={ariaLabel ? "img" : "presentation"}
+          aria-label={ariaLabel}
         >
+          {gradient && (
+            <defs>
+              {drawn.map((segment, index) => (
+                <linearGradient
+                  key={`${gradientId}-${segment.label || index}`}
+                  id={`${gradientId}-${index}`}
+                  gradientUnits="userSpaceOnUse"
+                  x1="0"
+                  y1="0"
+                  x2={size}
+                  y2={size}
+                >
+                  <stop
+                    offset="0%"
+                    stopColor={`color-mix(in oklab, ${segment.color} 84%, black)`}
+                  />
+                  <stop offset="55%" stopColor={segment.color} />
+                  <stop
+                    offset="100%"
+                    stopColor={`color-mix(in oklab, ${segment.color} 82%, white)`}
+                  />
+                </linearGradient>
+              ))}
+            </defs>
+          )}
+
           {/* Base background ring */}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="transparent"
-            stroke="hsl(var(--border) / 0.5)" // Use theme variable for bg
+            stroke={trackColor}
             strokeWidth={strokeWidth}
           />
 
           {/* Data Segments */}
           <AnimatePresence>
-            {data.map((segment, index) => {
-              if (segment.value === 0) return null;
-
+            {drawn.map((segment, index) => {
               const percentage =
                 internalTotalValue === 0
                   ? 0
                   : (segment.value / internalTotalValue) * 100;
 
-              const strokeDasharray = `${(percentage / 100) * circumference} ${circumference}`;
-              const strokeDashoffset = (cumulativePercentage / 100) * circumference;
+              // Each arc gives up half a gap at both ends, floored so slivers stay visible.
+              const arcLength = Math.max((percentage / 100) * circumference - gap, 1.5);
+              const strokeDasharray = `${arcLength} ${circumference}`;
+              const strokeDashoffset =
+                (cumulativePercentage / 100) * circumference + gap / 2;
 
-              const isActive = hoveredSegment?.label === segment.label;
+              const isActive = highlighted === segment.label;
+              const isDimmed = highlighted !== null && !isActive;
 
               cumulativePercentage += percentage;
 
@@ -113,36 +165,37 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
                   cy={size / 2}
                   r={radius}
                   fill="transparent"
-                  stroke={segment.color}
+                  stroke={gradient ? `url(#${gradientId}-${index})` : segment.color}
                   strokeWidth={strokeWidth}
                   strokeDasharray={strokeDasharray}
-                  strokeDashoffset={-strokeDashoffset} // Negative offset to draw correctly
-                  strokeLinecap="round" // Makes rounded edges
+                  strokeLinecap={strokeLinecap}
                   initial={{ opacity: 0, strokeDashoffset: circumference }}
                   animate={{
-                    opacity: 1,
+                    opacity: isDimmed ? 0.32 : 1,
                     strokeDashoffset: -strokeDashoffset,
                   }}
                   transition={{
-                    opacity: { duration: 0.3, delay: index * animationDelayPerSegment },
+                    opacity: { duration: 0.25, delay: index * animationDelayPerSegment },
                     strokeDashoffset: {
                       duration: animationDuration,
                       delay: index * animationDelayPerSegment,
-                      ease: "easeOut",
+                      ease: [0.16, 1, 0.3, 1],
                     },
                   }}
                   className={cn(
-                    "origin-center transition-transform duration-200",
+                    "origin-center",
                     highlightOnHover && "cursor-pointer"
                   )}
                   style={{
                     filter: isActive
-                      ? `drop-shadow(0px 0px 6px ${segment.color}) brightness(1.1)`
+                      ? `drop-shadow(0 0 10px color-mix(in oklab, ${segment.color} 60%, transparent))`
                       : "none",
-                    transform: isActive ? "scale(1.03)" : "scale(1)",
+                    transform: isActive ? "scale(1.035)" : "scale(1)",
                     transition: "filter 0.2s ease-out, transform 0.2s ease-out",
                   }}
-                  onMouseEnter={() => setHoveredSegment(segment)}
+                  onMouseEnter={() =>
+                    highlightOnHover && setHoveredSegment(segment)
+                  }
                 />
               );
             })}

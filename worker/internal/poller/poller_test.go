@@ -28,7 +28,7 @@ var (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("DATABASE_URL") == "" || os.Getenv("PROJECT_ID") == "" {
-		fmt.Println("SKIP: DATABASE_URL or PROJECT_ID not set — integration tests require a real database")
+		fmt.Println("SKIP: DATABASE_URL or PROJECT_ID not set - integration tests require a real database")
 		os.Exit(0)
 	}
 
@@ -61,7 +61,7 @@ func TestMain(m *testing.M) {
 		`SELECT id FROM queues WHERE project_id=$1 LIMIT 1`, testProjectID,
 	).Scan(&qid)
 	if err != nil || qid == "" {
-		fmt.Fprintln(os.Stderr, "no queues found for PROJECT_ID — run API integration tests first to create them")
+		fmt.Fprintln(os.Stderr, "no queues found for PROJECT_ID - run API integration tests first to create them")
 		os.Exit(0)
 	}
 	testQueueID = qid
@@ -166,7 +166,7 @@ func TestPriorityOrdering(t *testing.T) {
 
 	workerID := registerWorker(t, testProjectID)
 
-	// concurrency=1 — poller claims one job per cycle, so SQL ORDER BY governs sequence.
+	// concurrency=1 - poller claims one job per cycle, so SQL ORDER BY governs sequence.
 	exec := executor.New(testPool, nil, workerID, &config.Config{Concurrency: 1})
 
 	var mu sync.Mutex
@@ -287,7 +287,7 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 	wg.Wait()
 
 	if dups := atomic.LoadInt32(&duplicates); dups > 0 {
-		t.Errorf("detected %d double-claimed jobs — FOR UPDATE SKIP LOCKED may not be working", dups)
+		t.Errorf("detected %d double-claimed jobs - FOR UPDATE SKIP LOCKED may not be working", dups)
 	}
 
 	count := 0
@@ -354,7 +354,7 @@ func TestFailure_MovesToDLQ(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Insert a job with max_attempts=2 — our handler will always fail.
+	// Insert a job with max_attempts=2 - our handler will always fail.
 	var jobID string
 	err := testPool.QueryRow(ctx,
 		`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts, run_at, timeout_secs)

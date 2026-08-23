@@ -1,147 +1,202 @@
 "use client";
 
-import { CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { useMemo } from "react";
+import { TrendingDown, TrendingUp } from "lucide-react";
+import { CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
 import { ChartConfig, ChartContainer, ChartTooltip } from "@/components/ui/chart";
+import { cn } from "@/lib/utils";
 
 export interface ThroughputPoint {
   t: string;
   completed: number;
   failed: number;
+  enqueued?: number;
 }
 
+const ACCENT = "var(--color-purple-500, oklch(0.627 0.265 303.9))";
+
 const chartConfig = {
-  completed: { label: "Completed", color: "hsl(var(--state-completed))" },
-  failed: { label: "Failed", color: "hsl(var(--state-failed))" },
+  value: {
+    label: "Completed",
+    color: ACCENT,
+  },
 } satisfies ChartConfig;
 
 interface TooltipProps {
   active?: boolean;
-  payload?: Array<{ payload: ThroughputPoint }>;
+  payload?: Array<{ payload: { date: string; value: number; failed: number } }>;
 }
 
-function ThroughputTooltip({ active, payload }: TooltipProps) {
-  if (!active || !payload?.length) return null;
-  const point = payload[0].payload;
-  const total = point.completed + point.failed;
-  const rate = total ? (point.completed / total) * 100 : 100;
-
-  return (
-    <div className="rounded-lg border border-border bg-popover p-3 shadow-lg">
-      <div className="mb-1.5 text-[11px] text-muted-foreground">{point.t}</div>
-      <div className="grid gap-1 text-xs">
-        <div className="flex items-center justify-between gap-6">
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-state-completed" aria-hidden="true" />
-            Completed
-          </span>
-          <span className="font-mono font-medium tabular-nums">{point.completed.toLocaleString()}</span>
-        </div>
-        <div className="flex items-center justify-between gap-6">
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-state-failed" aria-hidden="true" />
-            Failed
-          </span>
-          <span className="font-mono font-medium tabular-nums">{point.failed.toLocaleString()}</span>
-        </div>
-        <div className="mt-0.5 border-t border-border pt-1 text-[11px] text-muted-foreground">
-          Success rate <span className="font-medium text-foreground">{rate.toFixed(1)}%</span>
+const CustomTooltip = ({ active, payload }: TooltipProps) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const finished = data.value + data.failed;
+    const rate = finished ? (data.value / finished) * 100 : 100;
+    return (
+      <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
+        <div className="text-sm text-muted-foreground mb-1">{data.date}</div>
+        <div className="flex items-center gap-2">
+          <div className="text-base font-bold">{data.value.toLocaleString()}</div>
+          <div className="text-[11px] text-emerald-600">{rate.toFixed(1)}% success</div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+  return null;
+};
 
-export function ThroughputChart({ data }: { data: ThroughputPoint[] }) {
-  const peak = Math.max(...data.map((d) => d.completed), 0);
+export function ThroughputChart({ data, height }: { data: ThroughputPoint[]; height?: number }) {
+  const series = useMemo(
+    () => data.map((p) => ({ date: p.t, value: p.completed, failed: p.failed })),
+    [data]
+  );
+
+  const values = series.map((d) => d.value);
+  const totalCompleted = values.reduce((a, b) => a + b, 0);
+  const totalFailed = series.reduce((a, d) => a + d.failed, 0);
+  const highValue = values.length ? Math.max(...values) : 0;
+  const lowValue = values.length ? Math.min(...values) : 0;
+  const first = values[0] ?? 0;
+  const last = values[values.length - 1] ?? 0;
+  const change = first ? ((last - first) / first) * 100 : 0;
+  const rising = change >= 0;
+  const Trend = rising ? TrendingUp : TrendingDown;
+  const peakLabel = series.find((d) => d.value === highValue)?.date;
 
   return (
-    <ChartContainer config={chartConfig} className="h-[220px] w-full">
-      <ComposedChart data={data} margin={{ top: 12, right: 8, left: -12, bottom: 4 }}>
-        <defs>
-          <pattern id="throughputDotGrid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-            <circle cx="10" cy="10" r="1" fill="hsl(var(--input))" fillOpacity="0.35" />
-          </pattern>
-          <filter id="throughputGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <feDropShadow dx="0" dy="4" stdDeviation="14" floodColor="hsl(var(--state-completed))" floodOpacity="0.35" />
-          </filter>
-          <filter id="throughputDotShadow" x="-50%" y="-50%" width="200%" height="200%">
-            <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.35" />
-          </filter>
-        </defs>
+    <div className="flex flex-col items-stretch gap-5">
+      <div className="mb-5">
+        <h2 className="text-base text-muted-foreground font-medium mb-1">Jobs Completed</h2>
+        <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-3.5">
+          <span className="text-4xl font-bold tabular-nums">{totalCompleted.toLocaleString()}</span>
+          <div className={cn("flex items-center gap-1", rising ? "text-emerald-600" : "text-red-600")}>
+            <Trend className="w-4 h-4" />
+            <span className="font-medium tabular-nums">
+              {rising ? "+" : ""}
+              {change.toFixed(1)}%
+            </span>
+            <span className="text-muted-foreground font-normal">Last 24 hours</span>
+          </div>
+        </div>
+      </div>
 
-        <rect x="0" y="0" width="100%" height="100%" fill="url(#throughputDotGrid)" style={{ pointerEvents: "none" }} />
+      <div className="grow">
+        <div className="flex items-center justify-between flex-wrap gap-2.5 text-sm mb-2.5">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Failed:</span>
+              <span className="font-semibold tabular-nums">{totalFailed.toLocaleString()}</span>
+            </div>
+          </div>
 
-        <CartesianGrid strokeDasharray="4 8" stroke="hsl(var(--input))" horizontal vertical={false} />
+          <div className="flex items-center gap-6 text-muted-foreground">
+            <span>
+              High: <span className="text-sky-600 font-medium tabular-nums">{highValue.toLocaleString()}</span>
+            </span>
+            <span>
+              Low: <span className="text-yellow-600 font-medium tabular-nums">{lowValue.toLocaleString()}</span>
+            </span>
+            <span>
+              Change:{" "}
+              <span className={cn("font-medium tabular-nums", rising ? "text-emerald-600" : "text-red-600")}>
+                {rising ? "+" : ""}
+                {change.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+        </div>
 
-        <XAxis
-          dataKey="t"
-          axisLine={false}
-          tickLine={false}
-          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-          tickMargin={10}
-          interval="preserveStartEnd"
-          minTickGap={24}
-        />
-        <YAxis
-          axisLine={false}
-          tickLine={false}
-          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-          tickMargin={8}
-          width={44}
-          allowDecimals={false}
-        />
+        <ChartContainer
+          config={chartConfig}
+          className="w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-initial"
+          style={{ height: height ?? 384 }}
+        >
+          <ComposedChart data={series} margin={{ top: 20, right: 10, left: 5, bottom: 20 }}>
+            <defs>
+              <pattern id="dotGrid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                <circle cx="10" cy="10" r="1" fill="var(--input)" fillOpacity="0.3" />
+              </pattern>
+              <filter id="dotShadow" x="-50%" y="-50%" width="200%" height="200%">
+                <feDropShadow dx="2" dy="3" stdDeviation="3" floodColor="rgba(0,0,0,0.8)" />
+              </filter>
+              <filter id="lineShadow" x="-100%" y="-100%" width="300%" height="300%">
+                <feDropShadow dx="4" dy="6" stdDeviation="25" floodColor="rgba(59, 130, 246, 0.9)" />
+              </filter>
+            </defs>
 
-        <ChartTooltip
-          content={<ThroughputTooltip />}
-          cursor={{ strokeDasharray: "3 3", stroke: "hsl(var(--muted-foreground))", strokeOpacity: 0.5 }}
-        />
+            <rect x="0" y="0" width="100%" height="100%" fill="url(#dotGrid)" style={{ pointerEvents: "none" }} />
 
-        <Line
-          type="monotone"
-          dataKey="completed"
-          stroke="hsl(var(--state-completed))"
-          strokeWidth={2}
-          filter="url(#throughputGlow)"
-          dot={(props) => {
-            const { cx, cy, payload, index } = props;
-            if (peak > 0 && payload.completed === peak) {
-              return (
-                <circle
-                  key={`peak-${index}`}
-                  cx={cx}
-                  cy={cy}
-                  r={5}
-                  fill="hsl(var(--state-completed))"
-                  stroke="hsl(var(--background))"
-                  strokeWidth={2}
-                  filter="url(#throughputDotShadow)"
-                />
-              );
-            }
-            return <g key={`dot-${index}`} />;
-          }}
-          activeDot={{
-            r: 5,
-            fill: "hsl(var(--state-completed))",
-            stroke: "hsl(var(--background))",
-            strokeWidth: 2,
-          }}
-        />
-        <Line
-          type="monotone"
-          dataKey="failed"
-          stroke="hsl(var(--state-failed))"
-          strokeWidth={1.5}
-          strokeDasharray="5 4"
-          dot={false}
-          activeDot={{
-            r: 4,
-            fill: "hsl(var(--state-failed))",
-            stroke: "hsl(var(--background))",
-            strokeWidth: 2,
-          }}
-        />
-      </ComposedChart>
-    </ChartContainer>
+            <CartesianGrid
+              strokeDasharray="4 8"
+              stroke="var(--input)"
+              strokeOpacity={1}
+              horizontal={true}
+              vertical={false}
+            />
+
+            {peakLabel && highValue > 0 && (
+              <ReferenceLine x={peakLabel} stroke={chartConfig.value.color} strokeDasharray="4 4" strokeWidth={1} />
+            )}
+
+            <XAxis
+              dataKey="date"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 12, fill: chartConfig.value.color }}
+              tickMargin={15}
+              interval="preserveStartEnd"
+              tickCount={5}
+            />
+
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 12, fill: chartConfig.value.color }}
+              tickFormatter={(value) => value.toLocaleString()}
+              tickMargin={15}
+              allowDecimals={false}
+            />
+
+            <ChartTooltip
+              content={<CustomTooltip />}
+              cursor={{ strokeDasharray: "3 3", stroke: "var(--muted-foreground)", strokeOpacity: 0.5 }}
+            />
+
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={chartConfig.value.color}
+              strokeWidth={2}
+              filter="url(#lineShadow)"
+              dot={(props) => {
+                const { cx, cy, payload, index } = props;
+                if (payload.value === highValue || payload.value === lowValue) {
+                  return (
+                    <circle
+                      key={`dot-${index}`}
+                      cx={cx}
+                      cy={cy}
+                      r={6}
+                      fill={chartConfig.value.color}
+                      stroke="white"
+                      strokeWidth={2}
+                      filter="url(#dotShadow)"
+                    />
+                  );
+                }
+                return <g key={`dot-${index}`} />;
+              }}
+              activeDot={{
+                r: 6,
+                fill: chartConfig.value.color,
+                stroke: "white",
+                strokeWidth: 2,
+                filter: "url(#dotShadow)",
+              }}
+            />
+          </ComposedChart>
+        </ChartContainer>
+      </div>
+    </div>
   );
 }

@@ -181,7 +181,7 @@ export function AppSidebar() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium">{user?.name ?? "Signed out"}</p>
-              <p className="truncate text-[10px] text-muted-foreground">{user?.email ?? "—"}</p>
+              <p className="truncate text-[10px] text-muted-foreground">{user?.email ?? "-"}</p>
             </div>
             <Badge variant="outline" className="shrink-0 rounded-full text-[9px]">Owner</Badge>
             <button

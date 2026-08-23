@@ -12,11 +12,11 @@ export function canRetry(status: string): boolean {
 export function cancelHint(status: string): string {
   return canCancel(status)
     ? "Stop this job before a worker claims it"
-    : `Only queued or scheduled jobs can be cancelled — this one is ${status}`;
+    : `Only queued or scheduled jobs can be cancelled - this one is ${status}`;
 }
 
 export function retryHint(status: string): string {
   return canRetry(status)
     ? "Re-enqueue with a reset attempt count"
-    : `Only failed, dead or cancelled jobs can be retried — this one is ${status}`;
+    : `Only failed, dead or cancelled jobs can be retried - this one is ${status}`;
 }
