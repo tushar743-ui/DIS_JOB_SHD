@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tushar/dis-job-queue/api/internal/auth"
 	"github.com/tushar/dis-job-queue/api/internal/config"
 	"github.com/tushar/dis-job-queue/api/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -42,8 +43,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email, password, and name are required")
 		return
 	}
-	if len(req.Password) < 8 {
-		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+	if err := auth.ValidatePassword(req.Password, req.Email, req.Name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

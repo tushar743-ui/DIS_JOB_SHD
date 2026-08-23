@@ -1,93 +1,101 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { auth, orgs, projects } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
-import { Button } from "@/components/ui/button";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ShimmerButton } from "@/components/ui/shimmer-button";
+
+const schema = z.object({
+  email: z.string().min(1, "Email is required").email("Enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type Values = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const setProject = useAuthStore((s) => s.setProject);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [reveal, setReveal] = useState(false);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  const {
+    register, handleSubmit, formState: { errors, isSubmitting },
+  } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "" } });
+
+  async function onSubmit(values: Values) {
+    setFormError("");
     try {
-      const res = await auth.login(email, password);
-      setAuth(res.access_token, res.refresh_token, {
-        id: res.user_id, email, name: res.name,
-      });
+      const res = await auth.login(values.email, values.password);
+      setAuth(res.access_token, res.refresh_token, { id: res.user_id, email: values.email, name: res.name });
       const orgList = await orgs.list().catch(() => []);
-      if (orgList.length > 0) {
+      if (orgList.length) {
         const projectList = await projects.list(orgList[0].id).catch(() => []);
-        if (projectList.length > 0) setProject(projectList[0].id, orgList[0].id);
+        if (projectList.length) setProject(projectList[0].id, orgList[0].id);
       }
       router.push("/dashboard");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Sign in failed");
     }
   }
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-background">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div className="inline-flex w-10 h-10 rounded-lg bg-amber-500 items-center justify-center text-black font-bold font-mono text-sm mb-4">
-            DJQ
-          </div>
-          <h1 className="text-xl font-semibold">Sign in</h1>
-          <p className="text-sm text-muted-foreground mt-1">Distributed Job Queue console</p>
+    <AuthShell
+      title="Sign in"
+      subtitle="JobFlow operations console"
+      footer={<>No account? <Link href="/register" className="text-primary hover:underline">Create one</Link></>}
+    >
+      {formError && (
+        <Alert variant="destructive" className="mb-4 rounded-lg">
+          <AlertCircle className="size-4" aria-hidden="true" />
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email" type="email" autoComplete="email" placeholder="you@example.com"
+            className="rounded-md" aria-invalid={Boolean(errors.email)} {...register("email")}
+          />
+          {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
         </div>
 
-        <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor="password">Password</Label>
+          <div className="relative">
             <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              autoComplete="email"
+              id="password" type={reveal ? "text" : "password"} autoComplete="current-password"
+              placeholder="••••••••" className="rounded-md pr-10"
+              aria-invalid={Boolean(errors.password)} {...register("password")}
             />
+            <button
+              type="button"
+              onClick={() => setReveal(!reveal)}
+              aria-label={reveal ? "Hide password" : "Show password"}
+              className="absolute inset-y-0 right-0 grid w-10 place-items-center text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-            />
-          </div>
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">{error}</p>
-          )}
-          <Button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-black" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
-          </Button>
-        </form>
+          {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
+        </div>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          No account?{" "}
-          <a href="/register" className="text-amber-400 hover:underline">Create one</a>
-        </p>
-      </div>
-    </div>
+        <ShimmerButton type="submit" disabled={isSubmitting} className="h-10 w-full text-sm">
+          {isSubmitting ? "Signing in…" : "Sign In"}
+        </ShimmerButton>
+      </form>
+    </AuthShell>
   );
 }

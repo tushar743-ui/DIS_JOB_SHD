@@ -19,8 +19,7 @@ import (
 	"github.com/tushar/dis-job-queue/worker/internal/poller"
 )
 
-// simulateWork returns a handler that sleeps for a random short duration and succeeds.
-// jobTypes listed here represent real application work — the handler simulates execution.
+
 func simulateWork(name string) executor.Handler {
 	return func(ctx context.Context, job *executor.Job) error {
 		delay := time.Duration(50+rand.Intn(200)) * time.Millisecond
@@ -35,7 +34,6 @@ func simulateWork(name string) executor.Handler {
 	}
 }
 
-// simulateFail returns a handler that always returns an error (to test retry/DLQ).
 func simulateFail(name string) executor.Handler {
 	return func(ctx context.Context, job *executor.Job) error {
 		return fmt.Errorf("simulated failure in handler %q", name)
@@ -72,8 +70,7 @@ func main() {
 
 	exec := executor.New(pool, rdb, workerID, cfg)
 
-	// Register handlers for all known job types.
-	// These simulate application-level work — in production these would call real services.
+	
 	jobTypes := []string{
 		"process_order", "sync_inventory", "generate_report", "cleanup_temp_files",
 		"send_email", "send_bulk_email", "push_notification", "send_sms",
@@ -84,7 +81,7 @@ func main() {
 	for _, jt := range jobTypes {
 		exec.Register(jt, simulateWork(jt))
 	}
-	// Intentionally failing handlers — used to exercise retry and DLQ paths.
+	
 	exec.Register("always_fail", simulateFail("always_fail"))
 
 	poll := poller.New(pool, rdb, exec, workerID, cfg)
@@ -92,7 +89,6 @@ func main() {
 
 	go hb.Run(ctx)
 	go poll.RunScheduler(ctx)
-	go poll.Run(ctx)
 
 	log.Info().
 		Str("worker_id", workerID).
@@ -102,6 +98,7 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go poll.Run(ctx)
 	<-quit
 
 	log.Info().Msg("graceful shutdown initiated...")

@@ -1,11 +1,19 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:is(.dark *));
+
 @theme {
-  /* Point Tailwind's font utilities at the next/font variables set in
-     app/layout.tsx. Without these the `font-sans` / `font-mono` classes fall
-     back to Tailwind's own stacks and the loaded fonts never render. */
   --font-sans: var(--font-open-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --color-state-running: hsl(var(--state-running));
+  --color-state-queued: hsl(var(--state-queued));
+  --color-state-scheduled: hsl(var(--state-scheduled));
+  --color-state-completed: hsl(var(--state-completed));
+  --color-state-failed: hsl(var(--state-failed));
+  --color-state-retrying: hsl(var(--state-retrying));
+  --color-state-cancelled: hsl(var(--state-cancelled));
+  --color-state-dlq: hsl(var(--state-dlq));
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -54,6 +62,14 @@
     --input:               220 13% 90%;
     --ring:                38 92% 50%;
     --radius:              0.375rem;
+    --state-running:     217 91% 60%;
+    --state-queued:      271 91% 65%;
+    --state-scheduled:    45 93% 47%;
+    --state-completed:   142 71% 45%;
+    --state-failed:        0 84% 60%;
+    --state-retrying:     25 95% 53%;
+    --state-cancelled:   220  9% 46%;
+    --state-dlq:           0 72% 51%;
     --status-queued:     38 92% 50%;
     --status-running:    217 91% 60%;
     --status-completed:  142 71% 45%;
@@ -114,3 +130,36 @@
     scrollbar-color: hsl(var(--border)) transparent;
   }
 }
+
+@theme inline {
+  --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
+  --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
+  @keyframes shimmer-slide {
+  to {
+    transform: translate(calc(100cqw - 100%), 0);
+    }
+  }
+  @keyframes spin-around {
+  0% {
+    transform: translateZ(0) rotate(0);
+    }
+  15%, 35% {
+    transform: translateZ(0) rotate(90deg);
+    }
+  65%, 85% {
+    transform: translateZ(0) rotate(270deg);
+    }
+  100% {
+    transform: translateZ(0) rotate(360deg);
+    }
+  }
+  --animate-ripple: ripple var(--duration,2s) ease calc(var(--i, 0)*.2s) infinite
+;
+  @keyframes ripple {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    }
+  50% {
+    transform: translate(-50%, -50%) scale(0.9);
+    }
+  }}

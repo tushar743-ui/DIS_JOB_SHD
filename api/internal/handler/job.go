@@ -15,25 +15,25 @@ type JobHandler struct{ db *pgxpool.Pool }
 func NewJobHandler(db *pgxpool.Pool) *JobHandler { return &JobHandler{db: db} }
 
 type jobRow struct {
-	ID             string     `json:"id"`
-	QueueID        string     `json:"queue_id"`
-	Type           string     `json:"type"`
-	Payload        []byte     `json:"payload"`
-	Status         string     `json:"status"`
-	Priority       int        `json:"priority"`
-	MaxAttempts    int        `json:"max_attempts"`
-	AttemptCount   int        `json:"attempt_count"`
-	ScheduledAt    *time.Time `json:"scheduled_at,omitempty"`
-	RunAt          time.Time  `json:"run_at"`
-	TimeoutSecs    int        `json:"timeout_secs"`
-	CronExpression *string    `json:"cron_expression,omitempty"`
-	BatchID        *string    `json:"batch_id,omitempty"`
-	IdempotencyKey *string    `json:"idempotency_key,omitempty"`
-	Tags           []string   `json:"tags"`
-	LastError      *string    `json:"last_error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	ID             string          `json:"id"`
+	QueueID        string          `json:"queue_id"`
+	Type           string          `json:"type"`
+	Payload        json.RawMessage `json:"payload"`
+	Status         string          `json:"status"`
+	Priority       int             `json:"priority"`
+	MaxAttempts    int             `json:"max_attempts"`
+	AttemptCount   int             `json:"attempt_count"`
+	ScheduledAt    *time.Time      `json:"scheduled_at,omitempty"`
+	RunAt          time.Time       `json:"run_at"`
+	TimeoutSecs    int             `json:"timeout_secs"`
+	CronExpression *string         `json:"cron_expression,omitempty"`
+	BatchID        *string         `json:"batch_id,omitempty"`
+	IdempotencyKey *string         `json:"idempotency_key,omitempty"`
+	Tags           []string        `json:"tags"`
+	LastError      *string         `json:"last_error,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
 }
 
 func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +283,20 @@ func (h *JobHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "queued for retry"})
 }
 
+func (h *JobHandler) Purge(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobID")
+	tag, err := h.db.Exec(r.Context(), `DELETE FROM jobs WHERE id=$1`, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete job")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
 func (h *JobHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobID")
 	limit, offset := pageParams(r)
@@ -296,11 +310,11 @@ func (h *JobHandler) Logs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type logRow struct {
-		ID       int64     `json:"id"`
-		Level    string    `json:"level"`
-		Message  string    `json:"message"`
-		Metadata []byte    `json:"metadata"`
-		LoggedAt time.Time `json:"logged_at"`
+		ID       int64           `json:"id"`
+		Level    string          `json:"level"`
+		Message  string          `json:"message"`
+		Metadata json.RawMessage `json:"metadata"`
+		LoggedAt time.Time       `json:"logged_at"`
 	}
 	logs := []logRow{}
 	for rows.Next() {

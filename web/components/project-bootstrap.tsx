@@ -11,14 +11,14 @@ export function ProjectBootstrap() {
 
   useEffect(() => {
     if (projectId || !accessToken) return;
-    orgs.list()
-      .then((orgList) => {
-        if (!orgList.length) return;
-        return projects.list(orgList[0].id).then((projectList) => {
-          if (projectList.length > 0) setProject(projectList[0].id, orgList[0].id);
-        });
-      })
-      .catch(() => {});
+    const bootstrap = async () => {
+      const orgList = await orgs.list();
+      const orgId = orgList[0]?.id ?? (await orgs.create("Personal")).id;
+      const projectList = await projects.list(orgId);
+      const id = projectList[0]?.id ?? (await projects.create(orgId, "Default")).id;
+      setProject(id, orgId);
+    };
+    bootstrap().catch(() => {});
   }, [projectId, accessToken, setProject]);
 
   return null;

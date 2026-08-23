@@ -143,6 +143,7 @@ export const jobs = {
     }),
   get: (id: string) => req<Job>(`/jobs/${id}`),
   cancel: (id: string) => req(`/jobs/${id}`, { method: "DELETE" }),
+  remove: (id: string) => req(`/jobs/${id}/purge`, { method: "DELETE" }),
   retry: (id: string) => req(`/jobs/${id}/retry`, { method: "POST" }),
   logs: (id: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();

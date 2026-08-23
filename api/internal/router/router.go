@@ -80,6 +80,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Get("/jobs/{jobID}", jobH.Get)
 			r.Delete("/jobs/{jobID}", jobH.Cancel)
 			r.Post("/jobs/{jobID}/retry", jobH.Retry)
+			r.Delete("/jobs/{jobID}/purge", jobH.Purge)
 			r.Get("/jobs/{jobID}/logs", jobH.Logs)
 			r.Get("/jobs/{jobID}/executions", jobH.Executions)
 
