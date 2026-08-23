@@ -1,4 +1,5 @@
-.PHONY: all build build-api build-worker test test-go test-web lint migrate dev clean
+.PHONY: all build build-api build-worker test test-go test-web lint migrate \
+	dev dev-watch dev-api dev-worker dev-web clean
 
 all: build
 
@@ -30,26 +31,34 @@ lint:
 	cd worker && go vet ./...
 
 
+# DATABASE_URL falls back to the value in .env, so these work with no exports.
+DATABASE_URL ?= $(shell sed -n "s/^DATABASE_URL=//p" .env 2>/dev/null | tr -d "'\"")
+MIGRATE ?= $(shell command -v migrate 2>/dev/null || echo $(HOME)/.local/bin/migrate)
+
 migrate-up:
-	$(HOME)/.local/bin/migrate -path db/migrations -database "$(DATABASE_URL)" up
+	$(MIGRATE) -path db/migrations -database "$(DATABASE_URL)" up
 
 migrate-down:
-	$(HOME)/.local/bin/migrate -path db/migrations -database "$(DATABASE_URL)" down 1
+	$(MIGRATE) -path db/migrations -database "$(DATABASE_URL)" down 1
 
 
+# One command, one terminal: API + worker + dashboard with tagged logs.
+# Ctrl-C stops everything. See ./scripts/dev.sh --help for flags.
 dev:
-	docker compose up -d postgres redis
-	@echo "Waiting for postgres..."
-	@sleep 2
-	$(MAKE) migrate-up
-	air -c .air.toml &
-	cd web && npm run dev
+	@exec ./scripts/dev.sh
+
+# Same, but rebuilds and restarts the Go services when .go files change.
+dev-watch:
+	@exec ./scripts/dev.sh --watch
 
 dev-api:
-	cd api && air
+	@exec ./scripts/dev.sh --api-only
 
 dev-worker:
-	cd worker && go run ./cmd/worker
+	@exec ./scripts/dev.sh --worker-only
+
+dev-web:
+	@exec ./scripts/dev.sh --web-only
 
 
 swagger:

@@ -4,6 +4,58 @@ A distributed job queue system with priority scheduling, retry policies, cron su
 
 ---
 
+## Quick Start
+
+The whole stack runs from a single terminal:
+
+```bash
+cp .env.example .env    # first run only - set DATABASE_URL, JWT_SECRET, PROJECT_ID
+make dev                # same as ./scripts/dev.sh
+```
+
+That starts the API on `:8080`, a worker, and the dashboard on `:3000`, streams all
+three log streams into the one terminal behind a per-service tag, and stops every
+process cleanly on Ctrl-C.
+
+```
+┌─ dis-job-queue dev ────────────────────────────────────
+│  api    http://localhost:8080
+│  web    http://localhost:3000
+│  worker 1 × queues: default,email,notifications
+└─ Ctrl-C stops everything ──────────────────────────────
+
+api      │ 1:07PM INF API server starting port=8080
+worker   │ 1:07PM INF worker started concurrency=5 queues=["default"]
+web      │ ✓ Ready in 1286ms
+
+✓ API ready at http://localhost:8080  ·  dashboard http://localhost:3000
+```
+
+Prerequisites: Go 1.25+ and Node 20+. Docker is needed only for a local
+Postgres/Redis or for the fully containerised path.
+
+### Variations
+
+| Command | What it runs |
+| --- | --- |
+| `make dev` | API + worker + dashboard |
+| `make dev-watch` | the same, and rebuilds/restarts the Go services on any `.go` change |
+| `make dev-api` · `make dev-worker` · `make dev-web` | a single service |
+| `./scripts/dev.sh --workers 3` | three worker processes against the same queues |
+| `./scripts/dev.sh --migrate` | apply database migrations before starting |
+| `./scripts/dev.sh --kill-port` | free `:8080` / `:3000` when something else holds them |
+| `PORT=8081 WEB_PORT=3001 make dev` | different ports |
+| `docker compose up` | everything in containers, including Postgres and Redis |
+
+`./scripts/dev.sh --help` lists every flag. The script also loads `.env` once and
+passes it to all three services (so no per-directory env files), installs the web
+dependencies on first run, brings up the compose Postgres/Redis when
+`DATABASE_URL` points at localhost, names the process holding a busy port instead
+of failing with `EADDRINUSE`, tees each service log to `.dev/logs/`, and takes the
+remaining services down if one of them exits - no orphaned processes to hunt for.
+
+---
+
 ## System Architecture
 
 ```mermaid

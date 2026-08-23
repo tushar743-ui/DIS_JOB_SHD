@@ -104,7 +104,18 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installe
 (( RUN_API || RUN_WORKER )) && need go
 (( RUN_WEB )) && { need node; need npm; }
 
-port_holder() {  # $1 = port -> "pid command" or empty
+port_in_use() {  # $1 = port -> 0 when something is listening
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    [[ -n "$(ss -ltnH "sport = :$p" 2>/dev/null)" ]]
+  elif command -v lsof >/dev/null 2>&1; then
+    [[ -n "$(lsof -ti "tcp:$p" -sTCP:LISTEN 2>/dev/null)" ]]
+  else
+    (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null
+  fi
+}
+
+port_holder_pid() {  # $1 = port -> pid, empty when not visible to this user
   local p="$1"
   if command -v ss >/dev/null 2>&1; then
     ss -ltnpH "sport = :$p" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1
@@ -113,26 +124,40 @@ port_holder() {  # $1 = port -> "pid command" or empty
   fi
 }
 
+port_holder_desc() {  # $1 = port -> human description of what holds it
+  local p="$1" pid container
+  pid="$(port_holder_pid "$p")"
+  if command -v docker >/dev/null 2>&1; then
+    container="$(docker ps --filter "publish=$p" --format '{{.Names}}' 2>/dev/null | head -1)"
+    [[ -n "$container" ]] && { echo "docker container '$container'"; return; }
+  fi
+  if [[ -n "$pid" ]]; then
+    echo "pid $pid ($(ps -p "$pid" -o comm= 2>/dev/null || echo '?'))"
+  else
+    echo "another process (owned by a different user or a container)"
+  fi
+}
+
 check_port() {  # $1 = port, $2 = label
-  local p="$1" label="$2" pid
-  pid="$(port_holder "$p")"
-  [[ -z "$pid" ]] && return 0
-  local cmd; cmd="$(ps -p "$pid" -o comm= 2>/dev/null || echo '?')"
-  if (( KILL_PORT )); then
-    warn "port $p ($label) held by pid $pid ($cmd) — killing it (--kill-port)"
+  local p="$1" label="$2" pid var
+  port_in_use "$p" || return 0
+  var=$( [[ "$label" == api ]] && echo PORT || echo WEB_PORT )
+  pid="$(port_holder_pid "$p")"
+  if (( KILL_PORT )) && [[ -n "$pid" ]]; then
+    warn "port $p ($label) held by $(port_holder_desc "$p") — killing it (--kill-port)"
     kill -TERM "$pid" 2>/dev/null
     for _ in $(seq 1 20); do
-      [[ -z "$(port_holder "$p")" ]] && return 0
+      port_in_use "$p" || return 0
       sleep 0.25
     done
     kill -KILL "$pid" 2>/dev/null
     sleep 0.5
-    [[ -z "$(port_holder "$p")" ]] || die "could not free port $p"
-  else
-    die "port $p ($label) is already in use by pid $pid ($cmd).
-     Free it, rerun with --kill-port, or pick another port:
-       $( [[ $label == api ]] && echo "PORT=$((p+1))" || echo "WEB_PORT=$((p+1))" ) ./scripts/dev.sh"
+    port_in_use "$p" && die "could not free port $p"
+    return 0
   fi
+  die "port $p ($label) is already in use by $(port_holder_desc "$p").
+     Free it$( [[ -n "$pid" ]] && echo ", rerun with --kill-port," || echo "," ) or pick another port:
+       $var=$((p+1)) ./scripts/dev.sh"
 }
 
 (( RUN_API )) && check_port "$PORT" api
@@ -184,6 +209,10 @@ prefix_stream() {           # $1 = label, $2 = colour, $3 = logfile
   return 0
 }
 
+go_fingerprint() {   # $1 = dir -> checksum of all .go file mtimes below it
+  find "$1" -name '*.go' -printf '%T@ %p\n' 2>/dev/null | sort | cksum
+}
+
 # start_service <label> <colour> <workdir> <watchdir|-> <cmd...>
 start_service() {
   local label="$1" color="$2" workdir="$3" watchdir="$4"; shift 4
@@ -191,39 +220,45 @@ start_service() {
   : >"$logfile"
   (
     set -m
-    trap 'kill -TERM -$child 2>/dev/null; wait $child 2>/dev/null; exit 0' TERM INT
+    child=""
+    trap 'kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
+
     while :; do
       ( cd "$workdir" && exec "$@" ) &
       child=$!
+
       if [[ "$watchdir" == "-" ]]; then
-        wait "$child"; code=$?
-        exit $code
+        wait "$child"; exit $?
       fi
-      local fp last_fp
-      last_fp="$(find "$watchdir" -name '*.go' -newermt '@0' -printf '%T@ %p\n' 2>/dev/null | sort | cksum)"
+
+      restarting=0
+      last_fp="$(go_fingerprint "$watchdir")"
       while kill -0 "$child" 2>/dev/null; do
         sleep 1
-        fp="$(find "$watchdir" -name '*.go' -printf '%T@ %p\n' 2>/dev/null | sort | cksum)"
+        fp="$(go_fingerprint "$watchdir")"
         if [[ "$fp" != "$last_fp" ]]; then
-          last_fp="$fp"
+          last_fp="$fp"; restarting=1
           echo "── change detected, restarting ──"
           kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
           wait "$child" 2>/dev/null
           break
         fi
       done
-      if ! kill -0 "$child" 2>/dev/null; then
-        wait "$child" 2>/dev/null; code=$?
-        # crashed while watching: wait for the next edit instead of dying
-        if (( code != 0 )); then
-          echo "── exited (code $code); waiting for a code change ──"
-          while :; do
-            sleep 1
-            fp="$(find "$watchdir" -name '*.go' -printf '%T@ %p\n' 2>/dev/null | sort | cksum)"
-            [[ "$fp" != "$last_fp" ]] && { last_fp="$fp"; echo "── change detected, restarting ──"; break; }
-          done
+      (( restarting )) && continue
+
+      # the service stopped on its own: report and idle until the code changes,
+      # so one bad build does not take the whole stack down in watch mode
+      wait "$child" 2>/dev/null; code=$?
+      echo "── exited (code $code) — waiting for a code change ──"
+      while :; do
+        sleep 1
+        fp="$(go_fingerprint "$watchdir")"
+        if [[ "$fp" != "$last_fp" ]]; then
+          last_fp="$fp"
+          echo "── change detected, restarting ──"
+          break
         fi
-      fi
+      done
     done
   ) > >(prefix_stream "$label" "$color" "$logfile") 2>&1 &
   PIDS+=("$!"); NAMES+=("$label")
