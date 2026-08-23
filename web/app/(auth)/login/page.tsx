@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AlertCircle, Eye, EyeOff } from "lucide-react";
-import { auth, orgs, projects } from "@/lib/api";
+import { auth } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -25,7 +25,6 @@ type Values = z.infer<typeof schema>;
 export default function LoginPage() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const setProject = useAuthStore((s) => s.setProject);
   const [formError, setFormError] = useState("");
   const [reveal, setReveal] = useState(false);
 
@@ -33,16 +32,19 @@ export default function LoginPage() {
     register, handleSubmit, formState: { errors, isSubmitting },
   } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "" } });
 
+  // Warm the dashboard route while the user is still typing so the redirect
+  // has nothing left to load.
+  useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
+
   async function onSubmit(values: Values) {
     setFormError("");
     try {
       const res = await auth.login(values.email, values.password);
       setAuth(res.access_token, res.refresh_token, { id: res.user_id, email: values.email, name: res.name });
-      const orgList = await orgs.list().catch(() => []);
-      if (orgList.length) {
-        const projectList = await projects.list(orgList[0].id).catch(() => []);
-        if (projectList.length) setProject(projectList[0].id, orgList[0].id);
-      }
+      // Redirect on the login response alone. Resolving the org and project is
+      // ProjectBootstrap's job inside the app shell, so it no longer blocks here.
       router.push("/dashboard");
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Sign in failed");
