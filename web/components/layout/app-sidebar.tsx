@@ -65,11 +65,12 @@ export function AppSidebar() {
   }
 
   return (
-    <aside
-      style={{ width: collapsed ? 56 : 224 }}
-      className="sticky top-0 z-30 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-lg transition-[width] duration-200 ease-out"
-    >
-      <div className="flex h-14 items-center gap-2 border-b border-border px-3">
+    <>
+      <aside
+        style={{ width: collapsed ? 56 : 224 }}
+        className="sticky top-0 z-30 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-card shadow-lg transition-[width] duration-200 ease-out"
+      >
+      <div className={cn("flex h-14 items-center gap-2 border-b border-border px-3", collapsed && "justify-center px-0")}>
         <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary font-mono text-xs font-bold text-primary-foreground">
           JF
         </span>
@@ -94,16 +95,6 @@ export function AppSidebar() {
             </Tooltip>
           </>
         )}
-        <button
-          onClick={toggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn(
-            "grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary",
-            collapsed ? "mx-auto" : "ml-1"
-          )}
-        >
-          {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
-        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 py-3">
@@ -193,6 +184,16 @@ export function AppSidebar() {
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+
+      <button
+        onClick={toggle}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        style={{ left: collapsed ? 56 : 224, top: 28 }}
+        className="fixed z-40 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-[left,background-color,color] duration-200 ease-out hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronLeft className="size-3.5" />}
+      </button>
+    </>
   );
 }
