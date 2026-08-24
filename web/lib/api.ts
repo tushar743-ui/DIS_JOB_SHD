@@ -163,12 +163,21 @@ export const dlq = {
     return req<Paginated<DLQEntry>>(`/queues/${queueId}/dlq?${qs}`);
   },
   retry: (id: string) => req(`/dlq/${id}/retry`, { method: "POST" }),
+  retryAll: (projectId: string) =>
+    req<{ requeued: number; skipped_unhandled: number }>(
+      `/projects/${projectId}/dlq/retry-all`,
+      { method: "POST" }
+    ),
+  discardUnhandled: (projectId: string) =>
+    req<{ discarded: number }>(`/projects/${projectId}/dlq/unhandled`, { method: "DELETE" }),
   discard: (id: string) => req(`/dlq/${id}`, { method: "DELETE" }),
 };
 
 export const metrics = {
-  project: (projectId: string) => req<ProjectMetrics>(`/projects/${projectId}/metrics`),
-  queue: (queueId: string) => req<QueueMetrics>(`/queues/${queueId}/metrics`),
+  project: (projectId: string, hours = 24) =>
+    req<ProjectMetrics>(`/projects/${projectId}/metrics?hours=${hours}`),
+  queue: (queueId: string, hours = 24) =>
+    req<QueueMetrics>(`/queues/${queueId}/metrics?hours=${hours}`),
 };
 
 export interface Org {
@@ -238,12 +247,18 @@ export interface ProjectMetrics {
   queues: { queue_id: string; queue_name: string; by_status: Partial<Record<JobStatus, number>> }[];
   active_workers: number;
   completed_24h: number;
+  throughput_24h: { hour: string; completed: number; failed: number }[];
+  range_hours: number;
+  bucket_seconds: number;
+  avg_duration_ms?: number;
   generated_at: string;
 }
 export interface QueueMetrics {
   queue_id: string;
   by_status: Partial<Record<JobStatus, number>>;
   throughput_24h: { hour: string; completed: number; failed: number }[];
+  range_hours: number;
+  bucket_seconds: number;
   avg_duration_ms?: number;
   generated_at: string;
 }

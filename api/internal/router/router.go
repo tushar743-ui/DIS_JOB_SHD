@@ -88,6 +88,8 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) http.Handler
 			r.Get("/workers/{workerID}", workerH.Get)
 
 			r.Get("/queues/{queueID}/dlq", dlqH.List)
+			r.Post("/projects/{projectID}/dlq/retry-all", dlqH.RetryAll)
+			r.Delete("/projects/{projectID}/dlq/unhandled", dlqH.DiscardUnhandled)
 			r.Post("/dlq/{dlqID}/retry", dlqH.Retry)
 			r.Delete("/dlq/{dlqID}", dlqH.Discard)
 

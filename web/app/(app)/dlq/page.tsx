@@ -6,6 +6,7 @@ import { useAllDLQ } from "@/hooks/use-data";
 import { dlq as dlqApi } from "@/lib/api";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { toast } from "sonner";
 import { reportError } from "@/lib/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +22,30 @@ export default function DLQPage() {
   const pending = (entries ?? []).filter((e) => !e.resolved_at);
 
   async function retryAll() {
-    const results = await Promise.allSettled(pending.map((e) => dlqApi.retry(e.id)));
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed) reportError(new Error(`${failed} of ${pending.length} could not be re-enqueued`), "Bulk retry incomplete");
+    if (!projectId) return;
+    try {
+      const res = await dlqApi.retryAll(projectId);
+      if (res.skipped_unhandled > 0) {
+        toast.warning(`Re-queued ${res.requeued} jobs`, {
+          description: `${res.skipped_unhandled} skipped - no live worker handles their job type. Retrying them would fail again.`,
+        });
+      } else {
+        toast.success(`Re-queued ${res.requeued} jobs`);
+      }
+    } catch (err) {
+      reportError(err, "Bulk retry failed");
+    }
+    mutate();
+  }
+
+  async function discardUnhandled() {
+    if (!projectId) return;
+    try {
+      const res = await dlqApi.discardUnhandled(projectId);
+      toast.success(`Discarded ${res.discarded} unrunnable jobs`);
+    } catch (err) {
+      reportError(err, "Discard failed");
+    }
     mutate();
   }
 
@@ -42,10 +64,17 @@ export default function DLQPage() {
       </Alert>
 
       {pending.length > 0 && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <ConfirmDialog
+            title="Discard jobs no worker can run?"
+            description="Entries whose job type is not handled by any live worker will be marked resolved. Nothing is re-enqueued."
+            confirmLabel="Discard unrunnable"
+            onConfirm={discardUnhandled}
+            trigger={<Button variant="outline" className="h-9 px-4 text-sm">Discard Unrunnable</Button>}
+          />
           <ConfirmDialog
             title={`Retry all ${pending.length} dead-letter jobs?`}
-            description="Every pending job in the dead letter queue will be re-enqueued with a reset attempt count."
+            description="Jobs whose type a live worker handles are re-enqueued with a reset attempt count. The rest are skipped."
             confirmLabel="Retry all"
             onConfirm={retryAll}
             trigger={<ShimmerButton className="h-9 px-4 text-sm">Retry All</ShimmerButton>}

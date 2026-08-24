@@ -190,6 +190,14 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var exists bool
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT true FROM queues WHERE id=$1`, queueID,
+	).Scan(&exists); err != nil {
+		writeError(w, http.StatusNotFound, "queue not found")
+		return
+	}
+
 	batchID := uuid.New().String()
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -199,6 +207,7 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	ids := make([]string, 0, len(reqs))
+	skipped := 0
 	for _, req := range reqs {
 		if req.Priority == 0 {
 			req.Priority = 5
@@ -225,17 +234,30 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 		if batchStatus == "scheduled" && req.CronExpression != nil {
 			nextRunAt = &runAt
 		}
+		if req.Type == "" {
+			writeError(w, http.StatusBadRequest, "type required for every job in the batch")
+			return
+		}
 		var id string
-		if err := tx.QueryRow(r.Context(),
+		err := tx.QueryRow(r.Context(),
 			`INSERT INTO jobs (queue_id, type, payload, status, priority, max_attempts,
 			  scheduled_at, run_at, timeout_secs, batch_id, idempotency_key, tags,
 			  cron_expression, next_run_at)
-			 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+			 VALUES ($1,$2,$3,$4::job_status,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+			 ON CONFLICT (idempotency_key) DO NOTHING
+			 RETURNING id`,
 			queueID, req.Type, []byte(req.Payload), batchStatus, req.Priority, req.MaxAttempts,
 			req.ScheduledAt, runAt, req.TimeoutSecs, batchID, req.IdempotencyKey, req.Tags,
 			req.CronExpression, nextRunAt,
-		).Scan(&id); err == nil {
+		).Scan(&id)
+		switch {
+		case err == nil:
 			ids = append(ids, id)
+		case err.Error() == "no rows in result set":
+			skipped++
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to create batch: "+err.Error())
+			return
 		}
 	}
 	if err := tx.Commit(r.Context()); err != nil {
@@ -245,6 +267,7 @@ func (h *JobHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"batch_id": batchID,
 		"count":    len(ids),
+		"skipped":  skipped,
 		"job_ids":  ids,
 	})
 }

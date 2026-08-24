@@ -75,3 +75,9 @@ func RegisterWorker(ctx context.Context, pool *pgxpool.Pool, projectID string, c
 	).Scan(&workerID)
 	return workerID, err
 }
+
+func SetHandledTypes(ctx context.Context, pool *pgxpool.Pool, workerID string, types []string) error {
+	_, err := pool.Exec(ctx,
+		`UPDATE workers SET handled_types=$1 WHERE id=$2`, types, workerID)
+	return err
+}

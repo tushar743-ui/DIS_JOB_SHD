@@ -89,18 +89,18 @@ export function useAllDLQ(projectId: string | null) {
   );
 }
 
-export function useProjectMetrics(projectId: string | null) {
+export function useProjectMetrics(projectId: string | null, hours = 24) {
   return useSWR<ProjectMetrics>(
-    projectId ? ["project-metrics", projectId] : null,
-    () => metrics.project(projectId!),
+    projectId ? ["project-metrics", projectId, hours] : null,
+    () => metrics.project(projectId!, hours),
     LIVE
   );
 }
 
-export function useQueueMetrics(queueId: string | null) {
+export function useQueueMetrics(queueId: string | null, hours = 24) {
   return useSWR<QueueMetrics>(
-    queueId ? ["queue-metrics", queueId] : null,
-    () => metrics.queue(queueId!),
+    queueId ? ["queue-metrics", queueId, hours] : null,
+    () => metrics.queue(queueId!, hours),
     SLOW
   );
 }

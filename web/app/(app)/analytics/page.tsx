@@ -7,14 +7,20 @@ import {
 } from "recharts";
 import { ThroughputChart } from "@/components/dashboard/throughput-chart";
 import { useAuthStore } from "@/lib/auth-store";
-import { useQueues, useProjectMetrics, useWorkers, useAllJobs, useQueueMetrics } from "@/hooks/use-data";
+import { useProjectMetrics, useWorkers, useAllJobs } from "@/hooks/use-data";
 import { ChartSkeleton } from "@/components/states";
 import { useNow } from "@/hooks/use-elapsed-time";
 import { Card } from "@/components/ui/card";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const RANGES = ["1H", "6H", "24H", "7D", "30D"];
+const RANGES = [
+  { label: "1H", hours: 1 },
+  { label: "6H", hours: 6 },
+  { label: "24H", hours: 24 },
+  { label: "7D", hours: 168 },
+  { label: "30D", hours: 720 },
+];
 const AXIS = { fontSize: 10, fill: "var(--muted-foreground)" };
 const TOOLTIP = {
   background: "var(--popover)",
@@ -38,22 +44,23 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
 export default function AnalyticsPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const [range, setRange] = useState("24H");
-  const { data: queueList } = useQueues(projectId);
-  const { data: metrics } = useProjectMetrics(projectId);
+  const activeRange = RANGES.find((r) => r.label === range) ?? RANGES[2];
+  const { data: metrics } = useProjectMetrics(projectId, activeRange.hours);
   const { data: workerList } = useWorkers(projectId);
   const { data: allJobs } = useAllJobs(projectId);
-  const { data: primary } = useQueueMetrics(queueList?.[0]?.id ?? null);
   const now = useNow();
 
   const points = useMemo(() => {
-    const n = range === "1H" ? 4 : range === "6H" ? 8 : range === "24H" ? 24 : range === "7D" ? 24 : 30;
-    return (primary?.throughput_24h ?? []).slice(-n).map((p) => ({
-      t: new Date(p.hour).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    const daily = (metrics?.bucket_seconds ?? 3600) >= 86400;
+    return (metrics?.throughput_24h ?? []).map((p) => ({
+      t: daily
+        ? new Date(p.hour).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : new Date(p.hour).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
       completed: p.completed,
       failed: p.failed,
       enqueued: p.completed + p.failed,
     }));
-  }, [primary, range]);
+  }, [metrics]);
 
   const depth = useMemo(() => {
     const names = (metrics?.queues ?? []).map((q) => q.queue_name);
@@ -96,13 +103,16 @@ export default function AnalyticsPage() {
     <div className="space-y-6">
       <Tabs value={range} onValueChange={(v) => v && setRange(v)}>
         <TabsList className="rounded-lg">
-          {RANGES.map((r) => <TabsTrigger key={r} value={r} className="rounded-md text-xs">{r}</TabsTrigger>)}
+          {RANGES.map((r) => <TabsTrigger key={r.label} value={r.label} className="rounded-md text-xs">{r.label}</TabsTrigger>)}
         </TabsList>
       </Tabs>
 
       <BlurFade delay={0.05}>
         <div className="grid gap-6 lg:grid-cols-2">
-          <ChartCard title="Job Throughput" subtitle={`Completed per hour · ${range}`}>
+          <ChartCard
+            title="Job Throughput"
+            subtitle={`Completed per ${(metrics?.bucket_seconds ?? 3600) >= 86400 ? "day" : (metrics?.bucket_seconds ?? 3600) >= 3600 ? "hour" : "15 min"} · ${range}`}
+          >
             {points.length === 0 ? <ChartSkeleton /> : <ThroughputChart data={points} />}
           </ChartCard>
 

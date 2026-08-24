@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { FolderPlus } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
-import { useProjectMetrics, useAllJobs, useQueues, useQueueMetrics } from "@/hooks/use-data";
+import { useProjectMetrics, useAllJobs } from "@/hooks/use-data";
 import { SectionCards, type SectionCard } from "@/components/dashboard/section-cards";
 import { ChartThroughputInteractive } from "@/components/dashboard/chart-throughput-interactive";
 import { RecentJobsTable } from "@/components/dashboard/recent-jobs-table";
@@ -18,9 +18,7 @@ export default function DashboardPage() {
   const projectId = useAuthStore((s) => s.projectId);
 
   const { data: metrics, error: metricsError, mutate: refetchMetrics } = useProjectMetrics(projectId);
-  const { data: queueList } = useQueues(projectId);
   const { data: allJobs } = useAllJobs(projectId);
-  const { data: primaryMetrics } = useQueueMetrics(queueList?.[0]?.id ?? null);
 
   const totals = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -30,7 +28,7 @@ export default function DashboardPage() {
     return acc;
   }, [metrics]);
 
-  const throughput = useMemo(() => primaryMetrics?.throughput_24h ?? [], [primaryMetrics]);
+  const throughput = useMemo(() => metrics?.throughput_24h ?? [], [metrics]);
 
   const cards = useMemo<SectionCard[]>(() => {
     const totalJobs = Object.values(totals).reduce((a, b) => a + b, 0);
@@ -39,7 +37,7 @@ export default function DashboardPage() {
     const failed = (totals.failed ?? 0) + (totals.dead ?? 0);
     const finished = completed + failed;
     const successRate = finished ? (completed / finished) * 100 : 100;
-    const avgMs = primaryMetrics?.avg_duration_ms ?? 0;
+    const avgMs = metrics?.avg_duration_ms ?? 0;
 
     const half = Math.floor(throughput.length / 2);
     const sum = (from: number, to: number) =>
@@ -73,11 +71,11 @@ export default function DashboardPage() {
       {
         label: "Avg Duration",
         value: avgMs ? fmtDuration(avgMs) : "—",
-        headline: queueList?.[0]?.name ? `Queue: ${queueList[0].name}` : "No queue selected",
+        headline: `Across ${metrics?.queues.length ?? 0} queues`,
         detail: "Mean execution time over 24h",
       },
     ];
-  }, [totals, primaryMetrics, throughput, metrics, queueList]);
+  }, [totals, throughput, metrics]);
 
   if (metricsError) return <ErrorState onRetry={() => refetchMetrics()} />;
   if (!projectId)
@@ -100,7 +98,7 @@ export default function DashboardPage() {
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4 md:gap-6">
         <SectionCards cards={cards} />
-        <ChartThroughputInteractive data={throughput} queueName={queueList?.[0]?.name} />
+        <ChartThroughputInteractive data={throughput} />
         <RecentJobsTable jobs={allJobs ?? []} />
       </div>
     </div>

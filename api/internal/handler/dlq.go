@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -53,11 +55,26 @@ func (h *DLQHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	dlqID := chi.URLParam(r, "dlqID")
 	userID := middleware.UserIDFromContext(r.Context())
 
-	var jobID string
+	var jobID, jobType, projectID string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT job_id FROM dead_letter_queue WHERE id=$1 AND resolved_at IS NULL`, dlqID,
-	).Scan(&jobID); err != nil {
+		`SELECT d.job_id, j.type, q.project_id
+		 FROM dead_letter_queue d
+		 JOIN jobs j ON j.id = d.job_id
+		 JOIN queues q ON q.id = d.queue_id
+		 WHERE d.id=$1 AND d.resolved_at IS NULL`, dlqID,
+	).Scan(&jobID, &jobType, &projectID); err != nil {
 		writeError(w, http.StatusNotFound, "DLQ entry not found or already resolved")
+		return
+	}
+
+	handled, err := h.handledTypes(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
+		return
+	}
+	if !slices.Contains(handled, jobType) {
+		writeError(w, http.StatusConflict,
+			"no live worker handles job type \""+jobType+"\" - retrying it would fail again")
 		return
 	}
 
@@ -72,6 +89,106 @@ func (h *DLQHandler) Retry(w http.ResponseWriter, r *http.Request) {
 
 	tx.Commit(r.Context())
 	writeJSON(w, http.StatusOK, map[string]string{"message": "job re-queued", "job_id": jobID})
+}
+
+const liveWorkerWindow = "2 minutes"
+
+func (h *DLQHandler) handledTypes(ctx context.Context, projectID string) ([]string, error) {
+	var types []string
+	err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(array_agg(DISTINCT t), '{}')
+		 FROM workers w, unnest(w.handled_types) AS t
+		 WHERE w.project_id=$1 AND w.status='active'
+		   AND w.last_heartbeat_at > now() - interval '`+liveWorkerWindow+`'`,
+		projectID).Scan(&types)
+	return types, err
+}
+
+func (h *DLQHandler) RetryAll(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	userID := middleware.UserIDFromContext(r.Context())
+
+	handled, err := h.handledTypes(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
+		return
+	}
+	if len(handled) == 0 {
+		writeError(w, http.StatusConflict,
+			"no live worker in this project is advertising job handlers - start a worker before retrying")
+		return
+	}
+
+	var requeued, skipped int
+	err = h.db.QueryRow(r.Context(),
+		`WITH pending AS (
+		     SELECT d.id, d.job_id, j.type
+		     FROM dead_letter_queue d
+		     JOIN jobs j ON j.id = d.job_id
+		     WHERE d.resolved_at IS NULL
+		       AND d.queue_id IN (SELECT id FROM queues WHERE project_id=$2)
+		 ), resolved AS (
+		     UPDATE dead_letter_queue SET resolved_at=now(), resolved_by=$1
+		     WHERE id IN (SELECT id FROM pending WHERE type = ANY($3))
+		     RETURNING job_id
+		 ), requeued AS (
+		     UPDATE jobs SET status='queued', attempt_count=0, last_error=NULL,
+		       run_at=now(), updated_at=now(), completed_at=NULL, claimed_by=NULL
+		     WHERE id IN (SELECT job_id FROM resolved)
+		     RETURNING id
+		 )
+		 SELECT (SELECT COUNT(*) FROM requeued),
+		        (SELECT COUNT(*) FROM pending WHERE NOT (type = ANY($3)))`,
+		userID, projectID, handled,
+	).Scan(&requeued, &skipped)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to retry dead-letter jobs: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"requeued":          requeued,
+		"skipped_unhandled": skipped,
+	})
+}
+
+func (h *DLQHandler) DiscardUnhandled(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	userID := middleware.UserIDFromContext(r.Context())
+
+	handled, err := h.handledTypes(r.Context(), projectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
+		return
+	}
+	if len(handled) == 0 {
+		writeError(w, http.StatusConflict,
+			"no live worker in this project is advertising job handlers - cannot tell which entries are unrunnable")
+		return
+	}
+
+	var discarded int
+	err = h.db.QueryRow(r.Context(),
+		`WITH unhandled AS (
+		     SELECT d.id
+		     FROM dead_letter_queue d
+		     JOIN jobs j ON j.id = d.job_id
+		     WHERE d.resolved_at IS NULL
+		       AND d.queue_id IN (SELECT id FROM queues WHERE project_id=$2)
+		       AND NOT (j.type = ANY($3))
+		 ), discarded AS (
+		     UPDATE dead_letter_queue SET resolved_at=now(), resolved_by=$1
+		     WHERE id IN (SELECT id FROM unhandled)
+		     RETURNING id
+		 )
+		 SELECT COUNT(*) FROM discarded`, userID, projectID, handled,
+	).Scan(&discarded)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to discard dead-letter jobs: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"discarded": discarded})
 }
 
 func (h *DLQHandler) Discard(w http.ResponseWriter, r *http.Request) {

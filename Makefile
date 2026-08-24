@@ -1,5 +1,5 @@
 .PHONY: all build build-api build-worker test test-go test-web lint migrate \
-	dev dev-watch dev-api dev-worker dev-web clean
+	dev dev-watch dev-api dev-worker dev-web seed-cron clean
 
 all: build
 
@@ -55,6 +55,10 @@ dev-worker:
 
 dev-web:
 	@exec ./scripts/dev.sh --web-only
+
+
+seed-cron:
+	@exec ./scripts/seed_cron_jobs.sh
 
 
 swagger:

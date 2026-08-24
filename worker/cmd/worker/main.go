@@ -84,6 +84,10 @@ func main() {
 	
 	exec.Register("always_fail", simulateFail("always_fail"))
 
+	if err := workerdb.SetHandledTypes(ctx, pool, workerID, exec.RegisteredTypes()); err != nil {
+		log.Warn().Err(err).Msg("failed to publish handled job types")
+	}
+
 	poll := poller.New(pool, rdb, exec, workerID, cfg)
 	hb := heartbeat.New(pool, workerID)
 

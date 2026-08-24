@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -61,6 +62,17 @@ func (e *Executor) Register(jobType string, h Handler) {
 	e.mu.Lock()
 	e.handlers[jobType] = h
 	e.mu.Unlock()
+}
+
+func (e *Executor) RegisteredTypes() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	types := make([]string, 0, len(e.handlers))
+	for t := range e.handlers {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func (e *Executor) Submit(job *Job) {
@@ -201,7 +213,7 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 	nextAttempt := job.AttemptCount + 1
 	if nextAttempt >= job.MaxAttempts {
 		e.db.Exec(ctx,
-			`UPDATE jobs SET status='dead', last_error=$1, updated_at=now(), claimed_by=NULL WHERE id=$2`,
+			`UPDATE jobs SET status='dead', last_error=$1, completed_at=now(), updated_at=now(), claimed_by=NULL WHERE id=$2`,
 			errMsg, job.ID)
 		e.db.Exec(ctx,
 			`INSERT INTO dead_letter_queue (job_id, queue_id, final_error, attempts)
