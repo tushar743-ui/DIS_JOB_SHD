@@ -51,8 +51,6 @@ func TestMain(m *testing.M) {
 	}
 	testPool = pool
 
-	// Isolated org/project/queue per run so these tests never touch the
-	// queues a real dev worker (make dev) is polling against the same DB.
 	ctx := context.Background()
 	runName := "poller-integration-test-" + workerHex()
 	var orgID string

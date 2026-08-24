@@ -831,8 +831,17 @@ func TestLoad_MultiUserJobSubmission(t *testing.T) {
 
 	users := make([]string, 10)
 	for i := range users {
-		token, _ := newToken(t)
-		users[i] = token
+		email := fmt.Sprintf("load-%s-%d@djq-test.io", testRunID, time.Now().UnixNano())
+		regResp := mustDo("POST", "/api/v1/auth/register",
+			mustJSON(map[string]any{"email": email, "password": "Qz7#vLmR4t", "name": "Load User"}), "")
+		assertStatus(t, regResp, http.StatusCreated)
+		var regBody map[string]string
+		mustDecode(regResp, &regBody)
+		users[i] = regBody["access_token"]
+
+		addResp := mustDo("POST", fmt.Sprintf("/api/v1/orgs/%s/members", testOrgID),
+			mustJSON(map[string]any{"email": email, "role": "member"}), adminToken)
+		assertStatus(t, addResp, http.StatusOK)
 	}
 
 	type result struct {

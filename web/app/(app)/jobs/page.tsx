@@ -96,8 +96,6 @@ export default function JobExplorerPage() {
 
   const page = useMemo(() => filtered.slice(cursor, cursor + pageSize), [filtered, cursor, pageSize]);
 
-  // columns are memoized before runAction exists; the ref keeps row handlers
-  // pointing at the latest implementation without rebuilding the table.
   const runActionRef = useRef<(action: JobAction, targets: JobRow[]) => void>(() => {});
 
   const columns = useMemo<ColumnDef<JobRow>[]>(
@@ -244,8 +242,6 @@ export default function JobExplorerPage() {
   const retryable = selectedJobs.filter((j) => canRetry(j.status));
   const cancellable = selectedJobs.filter((j) => canCancel(j.status));
 
-  // Single entry point for row and bulk actions: the cache is updated on click
-  // and rolled back if the request fails, so the click never waits on the network.
   async function runAction(action: JobAction, targets: JobRow[]) {
     if (!targets.length) {
       reportError(new Error(`No selected job is eligible to ${action}`), `Nothing to ${action}`);

@@ -8,6 +8,8 @@ import { Moon, Sun, ExternalLink, Search, ChevronRight } from "lucide-react";
 import { useUIStore } from "@/lib/ui-store";
 import { useAuthStore } from "@/lib/auth-store";
 import { useQueues, useAllJobs } from "@/hooks/use-data";
+import { useLiveEvents } from "@/hooks/use-live-events";
+import { LiveIndicator } from "@/components/layout/live-indicator";
 import {
   Command, CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from "@/components/ui/command";
@@ -50,6 +52,7 @@ export function TopBar() {
 
   const { data: queueList } = useQueues(projectId);
   const { data: jobList } = useAllJobs(open ? projectId : null);
+  const liveStatus = useLiveEvents(projectId);
   const crumbs = useCrumbs(pathname);
   const title = TITLES[pathname] ?? crumbs.at(-1)?.label ?? "JobFlow";
 
@@ -98,6 +101,8 @@ export function TopBar() {
       </button>
 
       <div className="ml-auto flex items-center gap-1.5">
+        <LiveIndicator status={liveStatus} />
+
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           aria-label="Toggle theme"

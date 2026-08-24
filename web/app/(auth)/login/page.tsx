@@ -32,8 +32,6 @@ export default function LoginPage() {
     register, handleSubmit, formState: { errors, isSubmitting },
   } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "" } });
 
-  // Warm the dashboard route while the user is still typing so the redirect
-  // has nothing left to load.
   useEffect(() => {
     router.prefetch("/dashboard");
   }, [router]);
@@ -43,8 +41,6 @@ export default function LoginPage() {
     try {
       const res = await auth.login(values.email, values.password);
       setAuth(res.access_token, res.refresh_token, { id: res.user_id, email: values.email, name: res.name });
-      // Redirect on the login response alone. Resolving the org and project is
-      // ProjectBootstrap's job inside the app shell, so it no longer blocks here.
       router.push("/dashboard");
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Sign in failed");

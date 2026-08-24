@@ -23,10 +23,6 @@ export function retryHint(status: string): string {
 
 export type JobAction = "retry" | "cancel" | "delete";
 
-/**
- * Optimistic cache transform: applies an action's expected outcome to a job
- * list so the UI updates on click rather than after the round-trip.
- */
 export function applyJobAction<T extends { id: string; status: string; attempt_count: number }>(
   action: JobAction,
   ids: Set<string>

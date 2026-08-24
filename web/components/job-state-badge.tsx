@@ -1,8 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-// Per-icon imports, not the package barrel: the root export pulls ~1500 icon
-// modules. This is the import pattern Next's own docs prescribe for this package.
 import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
 import { CalendarDotsIcon } from "@phosphor-icons/react/dist/csr/CalendarDots";
 import { CircleNotchIcon } from "@phosphor-icons/react/dist/csr/CircleNotch";

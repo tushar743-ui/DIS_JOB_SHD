@@ -30,8 +30,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RedisURL != "redis://localhost:6379" {
 		t.Errorf("RedisURL = %q", cfg.RedisURL)
 	}
-	if len(cfg.QueueNames) != 1 || cfg.QueueNames[0] != "default" {
-		t.Errorf("QueueNames = %#v, want [default]", cfg.QueueNames)
+	if len(cfg.QueueNames) != 0 {
+		t.Errorf("QueueNames = %#v, want empty (poll every queue in the project)", cfg.QueueNames)
 	}
 	if cfg.Concurrency != 5 {
 		t.Errorf("Concurrency = %d, want 5", cfg.Concurrency)

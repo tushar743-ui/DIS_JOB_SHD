@@ -8,7 +8,7 @@ export interface DonutChartSegment {
   value: number;
   color: string;
   label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- keeps the upstream component's open data shape
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 

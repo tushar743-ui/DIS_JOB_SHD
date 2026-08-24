@@ -68,9 +68,10 @@ func (h *Hub) join(projectID string, sub *subscriber) bool {
 	room, ok := h.rooms[projectID]
 	if !ok {
 		ctx, cancel := context.WithCancel(h.base)
+		stream := events.Subscribe(ctx, h.rdb, projectID)
 		room = &projectRoom{members: map[*subscriber]struct{}{}, cancel: cancel}
 		h.rooms[projectID] = room
-		go h.pump(ctx, projectID)
+		go h.pump(ctx, projectID, stream)
 	}
 	if len(room.members) >= maxPerProject {
 		return false
@@ -95,8 +96,7 @@ func (h *Hub) leave(projectID string, sub *subscriber) {
 	}
 }
 
-func (h *Hub) pump(ctx context.Context, projectID string) {
-	stream := events.Subscribe(ctx, h.rdb, projectID)
+func (h *Hub) pump(ctx context.Context, projectID string, stream <-chan events.Event) {
 	for {
 		select {
 		case <-ctx.Done():

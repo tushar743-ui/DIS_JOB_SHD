@@ -98,7 +98,10 @@ func TestWorkflowDependencyGraphEndpoint(t *testing.T) {
 
 	resp := mustDo("GET", "/api/v1/jobs/"+childID+"/dependencies", nil, adminToken)
 	var child struct {
-		DependsOn []struct{ JobID, Status string } `json:"depends_on"`
+		DependsOn []struct {
+			JobID  string `json:"job_id"`
+			Status string `json:"status"`
+		} `json:"depends_on"`
 		BlockedBy []string                         `json:"blocked_by"`
 		Satisfied bool                             `json:"satisfied"`
 	}
@@ -114,7 +117,9 @@ func TestWorkflowDependencyGraphEndpoint(t *testing.T) {
 
 	resp = mustDo("GET", "/api/v1/jobs/"+parentID+"/dependencies", nil, adminToken)
 	var parent struct {
-		Dependents []struct{ JobID string } `json:"dependents"`
+		Dependents []struct {
+			JobID string `json:"job_id"`
+		} `json:"dependents"`
 		Satisfied  bool                     `json:"satisfied"`
 	}
 	mustDecode(resp, &parent)
