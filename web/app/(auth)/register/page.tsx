@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { auth } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth-store";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ type Values = z.input<typeof schema>;
 
 export default function RegisterPage() {
   const router = useRouter();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const [formError, setFormError] = useState("");
   const [reveal, setReveal] = useState(false);
 
@@ -45,11 +47,20 @@ export default function RegisterPage() {
 
   const terms = watch("terms");
 
+  useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
+
   async function onSubmit(values: Values) {
     setFormError("");
     try {
-      await auth.register(values.email, values.password, values.name);
-      router.push("/login");
+      const res = await auth.register(values.email, values.password, values.name);
+      setAuth(res.access_token, res.refresh_token, {
+        id: res.user_id,
+        email: values.email,
+        name: values.name,
+      });
+      router.push("/dashboard");
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not create the account");
     }

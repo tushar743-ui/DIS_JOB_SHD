@@ -87,7 +87,9 @@ export const auth = {
       "/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false
     ),
   register: (email: string, password: string, name: string) =>
-    req("/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }, false),
+    req<{ access_token: string; refresh_token: string; user_id: string }>(
+      "/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }, false
+    ),
   me: () => req<{ id: string; email: string; name: string }>("/auth/me"),
   logout: (refresh: string) =>
     req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refresh }) }, false),
