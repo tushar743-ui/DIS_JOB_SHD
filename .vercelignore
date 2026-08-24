@@ -1,0 +1,12 @@
+api/
+worker/
+shared/
+db/
+bin/
+docs/
+scripts/
+go.work
+go.work.sum
+docker-compose.yml
+Makefile
+*.md

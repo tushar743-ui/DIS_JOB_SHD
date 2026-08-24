@@ -58,6 +58,7 @@ func New(d Deps) http.Handler {
 
 		r.Post("/auth/register", authH.Register)
 		r.Post("/auth/login", authH.Login)
+		r.Post("/auth/demo", authH.DemoLogin)
 		r.Post("/auth/refresh", authH.Refresh)
 		r.Get("/features", handler.Features(cfg))
 
@@ -95,6 +96,7 @@ func New(d Deps) http.Handler {
 			r.With(member).Post("/queues/{queueID}/resume", queueH.Resume)
 			r.With(viewer).Get("/queues/{queueID}/stats", queueH.Stats)
 
+			r.With(viewer).Get("/projects/{projectID}/jobs", jobH.ListByProject)
 			r.With(viewer).Get("/projects/{projectID}/job-types", jobH.HandledTypes)
 			r.With(viewer).Get("/queues/{queueID}/jobs", jobH.List)
 			r.With(member).Post("/queues/{queueID}/jobs", jobH.Create)

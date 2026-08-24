@@ -16,6 +16,11 @@ type Config struct {
 	PollInterval   time.Duration
 	HeartbeatInterval time.Duration
 	Env            string
+	DemoMode          bool
+	DemoInterval      time.Duration
+	DemoBurst         int
+	DemoBacklogMax    int
+	DemoRetention     time.Duration
 }
 
 func Load() *Config {
@@ -43,7 +48,20 @@ func Load() *Config {
 		PollInterval:      parseDuration(getEnv("POLL_INTERVAL", "500ms")),
 		HeartbeatInterval: parseDuration(getEnv("HEARTBEAT_INTERVAL", "10s")),
 		Env:               getEnv("ENV", "production"),
+		DemoMode:          strings.EqualFold(getEnv("DEMO_MODE", "false"), "true"),
+		DemoInterval:      parseDuration(getEnv("DEMO_INTERVAL", "3s")),
+		DemoBurst:         parsePositiveInt(getEnv("DEMO_BURST", "2"), 2),
+		DemoBacklogMax:    parsePositiveInt(getEnv("DEMO_BACKLOG_MAX", "60"), 60),
+		DemoRetention:     parseDuration(getEnv("DEMO_RETENTION", "2h")),
 	}
+}
+
+func parsePositiveInt(s string, fallback int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func getEnv(key, fallback string) string {

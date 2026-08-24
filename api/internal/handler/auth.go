@@ -124,6 +124,40 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *AuthHandler) DemoLogin(w http.ResponseWriter, r *http.Request) {
+	if !h.cfg.DemoLoginEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "demo login is not enabled on this deployment")
+		return
+	}
+
+	var userID, email, name string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT id, email, name FROM users WHERE email=$1`, h.cfg.DemoEmail,
+	).Scan(&userID, &email, &name)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "demo account is not provisioned")
+		return
+	}
+
+	token, refresh, err := h.generateTokens(userID, email)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+	if err := h.storeRefreshToken(r.Context(), userID, refresh, h.cfg.RefreshExpiry); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"access_token":  token,
+		"refresh_token": refresh,
+		"user_id":       userID,
+		"email":         email,
+		"name":          name,
+	})
+}
+
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`

@@ -207,6 +207,12 @@ Password is checked against a minimum-strength policy (rejects passwords contain
 
 Public. `{ "email": "...", "password": "..." }` → `200` with the same token pair plus `"name"`. `401` on any credential mismatch (the same message for "no such user" and "wrong password", to avoid user enumeration).
 
+### `POST /api/v1/auth/demo`
+
+Public, no body. Issues a normal token pair for the read-write demo account so a visitor can explore the dashboard without registering → `200` with `access_token`, `refresh_token`, `user_id`, `email`, `name`. The session it returns is an ordinary one: same tokens, same RBAC, same expiry, so nothing downstream special-cases it.
+
+Enabled only when the API has `DEMO_USER_EMAIL` set to a provisioned account; otherwise `503`. `GET /api/v1/features` advertises `demo_login` so the UI can hide the button when the deployment has no demo account.
+
 ### `POST /api/v1/auth/refresh`
 
 Public. `{ "refresh_token": "..." }` → `200` with a **new** access/refresh pair. The presented refresh token is revoked in the same call (rotation) - reusing it afterward returns `401`, which is what makes token replay detectable.
@@ -377,6 +383,12 @@ blocked ──(upstream dependency died permanently)──► cancelled
 ### `GET /queues/{queueID}/jobs`
 
 Query params: `status` (exact match on the FSM values above), plus [pagination](#pagination). Returns the paginated envelope.
+
+### `GET /projects/{projectID}/jobs`
+
+Every job in the project, newest first, in one request. Same query params as the per-queue listing (`status`, plus [pagination](#pagination)), and each row carries an extra `queue_name` so a cross-queue table needs no second lookup.
+
+Prefer this over fanning out `GET /queues/{queueID}/jobs` per queue: one round trip instead of one per queue, and the ordering is a true global `created_at DESC` rather than a client-side merge of per-queue pages, which silently mis-ranks once any single queue has more recent jobs than the page size.
 
 ### `GET /projects/{projectID}/job-types`
 

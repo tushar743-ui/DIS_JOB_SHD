@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertCircle, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Play } from "lucide-react";
 import { auth } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { useFeatures } from "@/hooks/use-data";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
@@ -27,6 +29,8 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [formError, setFormError] = useState("");
   const [reveal, setReveal] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const { data: features } = useFeatures();
 
   const {
     register, handleSubmit, formState: { errors, isSubmitting },
@@ -44,6 +48,19 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Sign in failed");
+    }
+  }
+
+  async function onDemo() {
+    setFormError("");
+    setDemoLoading(true);
+    try {
+      const res = await auth.demo();
+      setAuth(res.access_token, res.refresh_token, { id: res.user_id, email: res.email, name: res.name });
+      router.push("/dashboard");
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Could not start the demo");
+      setDemoLoading(false);
     }
   }
 
@@ -90,10 +107,35 @@ export default function LoginPage() {
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
-        <ShimmerButton type="submit" disabled={isSubmitting} className="h-11 w-full text-sm">
+        <ShimmerButton type="submit" disabled={isSubmitting || demoLoading} className="h-11 w-full text-sm">
           {isSubmitting ? "Signing in…" : "Sign In"}
         </ShimmerButton>
       </form>
+
+      {features?.demo_login && (
+        <div className="mt-6">
+          <div className="flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onDemo}
+            disabled={isSubmitting || demoLoading}
+            className="mt-4 h-11 w-full text-sm"
+          >
+            <Play className="size-4" aria-hidden="true" />
+            {demoLoading ? "Starting demo…" : "Live demo"}
+          </Button>
+
+          <p className="mt-2.5 text-center text-xs text-muted-foreground">
+            Opens a shared workspace with jobs running continuously. No account needed.
+          </p>
+        </div>
+      )}
     </AuthShell>
   );
 }

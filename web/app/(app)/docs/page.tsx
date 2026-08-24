@@ -5,8 +5,7 @@ import { Check, Copy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BlurFade } from "@/components/ui/blur-fade";
-
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+import { API_BASE as BASE } from "@/lib/api";
 
 interface Route { method: string; path: string; summary: string }
 interface Section { title: string; routes: Route[] }

@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import {
+  API_BASE,
   queues, jobs, workers, dlq, metrics, system, failureSummary,
   type Queue, type Job, type Worker, type DLQEntry,
   type ProjectMetrics, type QueueMetrics, type JobLog, type JobExecution,
@@ -27,23 +28,15 @@ export interface JobRow extends Job {
   queue_name: string;
 }
 
-async function fetchAllJobs(list: Queue[], status?: string, perQueue = 100): Promise<JobRow[]> {
-  const pages = await Promise.all(
-    list.map(async (q) => {
-      const res = await jobs.list(q.id, { limit: perQueue, status }).catch(() => null);
-      return (res?.data ?? []).map((j) => ({ ...j, queue_name: q.name }));
-    })
-  );
-  return pages.flat().sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+async function fetchAllJobs(projectId: string, status?: string, limit = 200): Promise<JobRow[]> {
+  const res = await jobs.listByProject(projectId, { limit, status });
+  return res.data;
 }
 
 export function useAllJobs(projectId: string | null, status?: string, live = false) {
-  const { data: queueList } = useQueues(projectId);
   return useSWR<JobRow[]>(
-    queueList && queueList.length ? ["all-jobs", projectId, status, queueList.length] : null,
-    () => fetchAllJobs(queueList!, status),
+    projectId ? ["all-jobs", projectId, status] : null,
+    () => fetchAllJobs(projectId!, status),
     live ? LIVE : SLOW
   );
 }
@@ -128,8 +121,6 @@ export function useQueueMetrics(queueId: string | null, hours = 24) {
     SLOW
   );
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export function useBackendHealth() {
   const { data, error } = useSWR(

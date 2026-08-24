@@ -12,6 +12,11 @@ import (
 
 const MaxShards = 64
 
+func AssignSQL(partitionKeyArg, idArg string) string {
+	return `CASE WHEN q.shard_count <= 1 THEN 0
+		ELSE mod(hashtext(COALESCE(` + partitionKeyArg + `::text, ` + idArg + `::text)) & 2147483647, q.shard_count) END`
+}
+
 func mix(x uint64) uint64 {
 	x ^= x >> 30
 	x *= 0xbf58476d1ce4e5b9

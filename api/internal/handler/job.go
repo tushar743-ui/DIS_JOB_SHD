@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tushar/dis-job-queue/api/internal/workflow"
 	"github.com/tushar/dis-job-queue/shared/events"
+	"github.com/tushar/dis-job-queue/shared/shard"
 )
 
 type JobHandler struct {
@@ -54,6 +55,26 @@ const jobColumns = `id, queue_id, type, payload, status::text, priority, max_att
 	scheduled_at, run_at, timeout_secs, cron_expression, batch_id, idempotency_key,
 	tags, last_error, shard, partition_key, created_at, updated_at, completed_at`
 
+func prefixed(columns, alias string) string {
+	parts := strings.Split(columns, ",")
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if name, cast, found := strings.Cut(p, "::"); found {
+			parts[i] = alias + "." + name + "::" + cast
+			continue
+		}
+		parts[i] = alias + "." + p
+	}
+	return strings.Join(parts, ", ")
+}
+
+func scanJobWithQueue(row pgx.Row, j *jobRow, queueName *string) error {
+	return row.Scan(&j.ID, &j.QueueID, &j.Type, &j.Payload, &j.Status, &j.Priority,
+		&j.MaxAttempts, &j.AttemptCount, &j.ScheduledAt, &j.RunAt, &j.TimeoutSecs,
+		&j.CronExpression, &j.BatchID, &j.IdempotencyKey, &j.Tags, &j.LastError,
+		&j.Shard, &j.PartitionKey, &j.CreatedAt, &j.UpdatedAt, &j.CompletedAt, queueName)
+}
+
 func scanJob(row pgx.Row, j *jobRow) error {
 	return row.Scan(&j.ID, &j.QueueID, &j.Type, &j.Payload, &j.Status, &j.Priority,
 		&j.MaxAttempts, &j.AttemptCount, &j.ScheduledAt, &j.RunAt, &j.TimeoutSecs,
@@ -61,8 +82,7 @@ func scanJob(row pgx.Row, j *jobRow) error {
 		&j.Shard, &j.PartitionKey, &j.CreatedAt, &j.UpdatedAt, &j.CompletedAt)
 }
 
-const shardExpr = `CASE WHEN q.shard_count <= 1 THEN 0
-	ELSE mod(hashtext(COALESCE(%s::text, %s::text)) & 2147483647, q.shard_count) END`
+var shardExpr = shard.AssignSQL("%s", "%s")
 
 func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
 	queueID := chi.URLParam(r, "queueID")
@@ -103,6 +123,54 @@ func (h *JobHandler) List(w http.ResponseWriter, r *http.Request) {
 	var total int
 	h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM jobs `+where, args...).Scan(&total)
 	writeJSON(w, http.StatusOK, paginated[jobRow]{Data: jobs, Total: total, Limit: limit, Offset: offset})
+}
+
+func (h *JobHandler) ListByProject(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	limit, offset := pageParams(r)
+	status := r.URL.Query().Get("status")
+
+	where := `WHERE j.queue_id IN (SELECT id FROM queues WHERE project_id=$1)`
+	args := []any{projectID}
+	if status != "" {
+		where += ` AND j.status=$2::job_status`
+		args = append(args, status)
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT `+prefixed(jobColumns, "j")+`, q.name
+		 FROM jobs j JOIN queues q ON q.id = j.queue_id `+where+
+			fmt.Sprintf(` ORDER BY j.created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2),
+		append(args, limit, offset)...)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	defer rows.Close()
+
+	type projectJobRow struct {
+		jobRow
+		QueueName string `json:"queue_name"`
+	}
+
+	jobs := []projectJobRow{}
+	for rows.Next() {
+		var j projectJobRow
+		if err := scanJobWithQueue(rows, &j.jobRow, &j.QueueName); err != nil {
+			writeError(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		jobs = append(jobs, j)
+	}
+	if rows.Err() != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	var total int
+	h.db.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM jobs j `+where, args...).Scan(&total)
+	writeJSON(w, http.StatusOK, paginated[projectJobRow]{Data: jobs, Total: total, Limit: limit, Offset: offset})
 }
 
 func (h *JobHandler) HandledTypes(w http.ResponseWriter, r *http.Request) {

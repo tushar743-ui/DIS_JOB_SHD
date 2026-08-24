@@ -321,6 +321,68 @@ rather than an unbounded one.
 
 ---
 
+## Demo Mode
+
+### A dedicated `/auth/demo` endpoint, not demo credentials in the client
+The button could have called the normal login with a hardcoded email and
+password. That ships a working password in the JS bundle, and anyone reading
+it can also use the ordinary sign-in form. Instead the server mints a session
+for an account named by `DEMO_USER_EMAIL`, so no password exists client-side
+and the demo account is configuration rather than code. Cost: one more public
+endpoint to reason about. It issues an ordinary session with ordinary RBAC, so
+it widens who can reach the demo workspace, not what a session can do.
+
+### The demo account gets full access, not a read-only viewer role
+A public button granting `owner` on a real workspace is a deliberate choice,
+not an oversight: the point is to let someone evaluate the system — create a
+queue, pause it, retry a dead job — which a `viewer` role would block. The
+trade is that any visitor can also mutate that workspace. That is acceptable
+for a workspace whose entire contents are machine-generated demo traffic, and
+would not be for one holding anything real.
+
+### The generator lives in the worker, gated by a flag
+It could have been its own binary or an external script. The worker is already
+the always-running process with database access, graceful shutdown, and lock
+infrastructure, so a goroutine behind `DEMO_MODE` is less machinery than a new
+service to deploy and supervise. Cost: a consumer process now also produces,
+which muddies its single responsibility. Contained by keeping it in its own
+package and off by default.
+
+### Standing down when Redis is unavailable, unlike the scheduler
+The scheduler deliberately runs unguarded when it cannot take its lock, because
+every sweep statement is idempotent and availability matters more than doing
+the work once. The generator does the opposite: creating jobs is not
+idempotent, so running unguarded on every worker would multiply demo traffic by
+the fleet size. Same lock, opposite fallback, because the operations have
+opposite duplication semantics.
+
+### Bounded by a backlog ceiling and a retention window
+"Runs forever" has to mean a steady state, not unbounded growth. The generator
+skips any queue already at `DEMO_BACKLOG_MAX` in-flight jobs, so it never
+outruns the workers, and prunes its own completed jobs past `DEMO_RETENTION`.
+The pruner is scoped to `status='completed'` rows tagged `demo`, so it can
+never touch real data, and deliberately leaves `dead` jobs alone — those are
+the DLQ's demo content and the failure rate already bounds them.
+
+### One project-wide jobs endpoint instead of per-queue fan-out
+The dashboard originally built its cross-queue table by requesting each queue's
+jobs separately and merging client-side. Under continuous traffic that turned
+every live event into one request per queue, and the browser's per-host
+connection limit meant the page never finished loading. `GET
+/projects/{id}/jobs` replaced it with a single query. It also fixed a
+correctness bug that low traffic had hidden: merging fixed-size per-queue pages
+mis-ranks the combined list as soon as one queue has more recent jobs than the
+page size.
+
+### Live-event revalidation is coalesced, not immediate
+Each WebSocket event used to trigger its revalidations synchronously, which is
+fine when jobs arrive occasionally and pathological when they arrive
+constantly. Events now accumulate into a deduplicated set flushed once a
+second. The upper bound on refetching is now the flush interval rather than the
+event rate, which is what makes the dashboard stable under demo traffic. Cost:
+up to a second of extra latency on a live update, imperceptible for a
+monitoring view.
+
 ## Known Debt (left as-is deliberately, not by oversight)
 
 - Queue config sheet collects `rate_limit_enabled` / `rate_limit_per_minute`

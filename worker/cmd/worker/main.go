@@ -15,6 +15,7 @@ import (
 	"github.com/tushar/dis-job-queue/shared/events"
 	"github.com/tushar/dis-job-queue/worker/internal/config"
 	workerdb "github.com/tushar/dis-job-queue/worker/internal/db"
+	"github.com/tushar/dis-job-queue/worker/internal/demo"
 	"github.com/tushar/dis-job-queue/worker/internal/executor"
 	"github.com/tushar/dis-job-queue/worker/internal/heartbeat"
 	"github.com/tushar/dis-job-queue/worker/internal/poller"
@@ -47,6 +48,12 @@ var jobTypes = []string{
 	"compliance_alert", "compliance_report", "heartbeat_check", "delayed_task",
 	"batch_op", "batch_process", "idem_job", "cancel_target", "prio_test", "scheduled_cleanup",
 	"extract", "transform", "load", "notify", "workflow_step",
+}
+
+var demoJobTypes = []string{
+	"process_order", "sync_inventory", "generate_report", "send_email",
+	"push_notification", "etl_batch", "transcode_video", "process_payment",
+	"fraud_check", "cleanup_temp_files", "send_sms", "notify",
 }
 
 func main() {
@@ -101,6 +108,15 @@ func main() {
 	go hb.Run(ctx)
 	go poll.RunScheduler(ctx)
 	go poll.Run(ctx)
+
+	if cfg.DemoMode {
+		go demo.New(pool, rdb, bus, cfg, demoJobTypes).Run(ctx)
+		log.Info().
+			Dur("interval", cfg.DemoInterval).
+			Int("burst", cfg.DemoBurst).
+			Int("backlog_max", cfg.DemoBacklogMax).
+			Msg("demo traffic generator enabled")
+	}
 
 	log.Info().
 		Str("worker_id", workerID).

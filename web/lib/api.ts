@@ -1,4 +1,19 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+function resolveBase(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  if (configured) return configured;
+  if (process.env.VERCEL) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not set, so this build has no API to talk to. " +
+        "Set it to the origin of your deployed Go API (for example https://api.example.com) " +
+        "in the Vercel project's Environment Variables, then redeploy."
+    );
+  }
+  return "http://localhost:8080";
+}
+
+export const API_BASE = resolveBase();
+
+const BASE = API_BASE;
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
@@ -90,6 +105,10 @@ export const auth = {
     req<{ access_token: string; refresh_token: string; user_id: string }>(
       "/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }, false
     ),
+  demo: () =>
+    req<{ access_token: string; refresh_token: string; user_id: string; email: string; name: string }>(
+      "/auth/demo", { method: "POST" }, false
+    ),
   me: () => req<{ id: string; email: string; name: string }>("/auth/me"),
   logout: (refresh: string) =>
     req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refresh }) }, false),
@@ -131,6 +150,13 @@ export const jobs = {
     if (params?.offset) qs.set("offset", String(params.offset));
     if (params?.status) qs.set("status", params.status);
     return req<Paginated<Job>>(`/queues/${queueId}/jobs?${qs}`);
+  },
+  listByProject: (projectId: string, params?: { limit?: number; offset?: number; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    if (params?.status) qs.set("status", params.status);
+    return req<Paginated<Job & { queue_name: string }>>(`/projects/${projectId}/jobs?${qs}`);
   },
   create: (queueId: string, data: CreateJobInput) =>
     req<{ id: string; status: string }>(`/queues/${queueId}/jobs`, {
@@ -260,6 +286,7 @@ export interface Features {
   live_events: boolean;
   workflow_dependencies: boolean;
   queue_sharding: boolean;
+  demo_login: boolean;
   rbac_roles: string[];
 }
 export type SummaryConfidence = "low" | "medium" | "high";

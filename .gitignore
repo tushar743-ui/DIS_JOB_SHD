@@ -21,10 +21,17 @@ vendor/
 *.out
 *.log
 
+node_modules/
 web/.next/
 web/out/
 web/node_modules/
 web/.turbo/
+web/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+.vercel
+.vercel/
 
 .DS_Store
 Thumbs.db

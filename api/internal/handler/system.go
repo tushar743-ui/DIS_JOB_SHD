@@ -42,6 +42,7 @@ func Features(cfg *config.Config) http.HandlerFunc {
 			"live_events":           true,
 			"workflow_dependencies": true,
 			"queue_sharding":        true,
+			"demo_login":            cfg.DemoLoginEnabled(),
 			"rbac_roles":            []string{"viewer", "member", "admin", "owner"},
 		})
 	}

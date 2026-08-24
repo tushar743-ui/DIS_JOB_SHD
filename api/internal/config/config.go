@@ -20,6 +20,7 @@ type Config struct {
 	RateLimitWindow  time.Duration
 	GroqAPIKey       string
 	AISummaryModel   string
+	DemoEmail        string
 }
 
 func Load() *Config {
@@ -36,11 +37,16 @@ func Load() *Config {
 		RateLimitWindow: parseDuration(getEnv("RATE_LIMIT_WINDOW", "1m")),
 		GroqAPIKey:      os.Getenv("GROQ_API_KEY"),
 		AISummaryModel:  getEnv("AI_SUMMARY_MODEL", "openai/gpt-oss-20b"),
+		DemoEmail:       strings.TrimSpace(os.Getenv("DEMO_USER_EMAIL")),
 	}
 }
 
 func (c *Config) AISummariesEnabled() bool {
 	return strings.TrimSpace(c.GroqAPIKey) != ""
+}
+
+func (c *Config) DemoLoginEnabled() bool {
+	return c.DemoEmail != ""
 }
 
 func getEnv(key, fallback string) string {

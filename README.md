@@ -16,6 +16,7 @@ Full REST/WebSocket API reference: **[API.md](API.md)**.
 - [Entity-Relationship Diagram](#entity-relationship-diagram)
 - [How It Works](#how-it-works)
 - [Frontend Dashboard](#frontend-dashboard)
+- [Deployment](#deployment)
 
 
 ---
@@ -650,6 +651,70 @@ Live data arrives through `useLiveEvents`, a WebSocket hook that reconnects with
 exponential back-off and drives targeted SWR revalidation, backed visually by a small
 `LiveIndicator` pill (connected / reconnecting / polling-only) so an operator always
 knows whether they are looking at push-fresh or poll-fresh data.
+
+### Live demo mode
+
+Two independent switches, both off by default, that together let a visitor click
+**Live demo** on the sign-in page and land in a dashboard that is actually doing
+something:
+
+| Variable | Service | Effect |
+| --- | --- | --- |
+| `DEMO_USER_EMAIL` | API | Enables `POST /auth/demo`, which issues an ordinary session for that account. Unset, the endpoint returns `503` and the button never renders. |
+| `DEMO_MODE` | Worker | Runs a traffic generator that keeps a steady stream of jobs flowing through the queues. |
+
+The generator is leader-elected through the same Redis lock the scheduler uses, so
+running N workers still produces one stream rather than N. Unlike the scheduler it
+does **not** fall back to running unguarded when Redis is unavailable: the sweeps
+are idempotent and safe to duplicate, but creating jobs is not, so it stands down
+instead of multiplying traffic. Volume is bounded at both ends: it skips any queue
+whose in-flight backlog is already at `DEMO_BACKLOG_MAX`, and prunes its own
+completed jobs past `DEMO_RETENTION`, so a demo left running for days stays at a
+steady state instead of growing without limit. Generated jobs are tagged `demo`,
+which is also the only thing the pruner will touch.
+
+`DEMO_INTERVAL` and `DEMO_BURST` set the rate. Roughly 8% of generated jobs fail on
+purpose so the dead-letter queue, retry history, and AI failure summaries have live
+content to show rather than sitting empty.
+
+---
+
+## Deployment
+
+The three processes do not all belong on the same platform.
+
+| Component | Target | Why |
+| --- | --- | --- |
+| `web/` dashboard | Vercel | Ordinary Next.js app; `web/vercel.json` is committed and needs no extra setup. |
+| `api/` | Any host that runs a persistent process (Railway, Fly.io, Render, a container) | It holds WebSocket connections and one long-lived Redis subscription per project. A serverless function is torn down between requests, so live events would not survive. |
+| `worker/` | Same | It is a long-running poller, scheduler, and heartbeat loop. There is no request to trigger it, so there is nothing for a serverless platform to invoke. |
+
+Postgres and Redis are already managed (Neon, Upstash) and need no deployment step.
+
+### Vercel
+
+Set the project's **Root Directory** to `web` — the repository root is a Go
+workspace, and pointing Vercel at it makes framework detection ambiguous.
+
+Then set one environment variable:
+
+```
+NEXT_PUBLIC_API_URL=https://your-api-host.example.com
+```
+
+This is not optional. Without it the dashboard would fall back to
+`http://localhost:8080`, which builds and deploys perfectly happily and then
+fails on every request from a visitor's browser. To make that impossible, the
+build **fails on Vercel** when the variable is missing, naming the variable and
+what to set it to, so the mistake surfaces in the build log rather than as a
+blank dashboard in production.
+
+Finally, add the Vercel domain to the API's `CORS_ORIGINS` (it is an explicit
+allowlist, not a wildcard) or the browser will block every response:
+
+```
+CORS_ORIGINS=https://your-app.vercel.app
+```
 
 ---
 
