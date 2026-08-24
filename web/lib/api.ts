@@ -136,6 +136,10 @@ export const jobs = {
     req<{ id: string; status: string }>(`/queues/${queueId}/jobs`, {
       method: "POST", body: JSON.stringify(data),
     }),
+  createBatch: (queueId: string, data: CreateJobInput[]) =>
+    req<{ batch_id: string; count: number; job_ids: string[]; skipped: number }>(
+      `/queues/${queueId}/jobs/batch`, { method: "POST", body: JSON.stringify(data) }
+    ),
   get: (id: string) => req<Job>(`/jobs/${id}`),
   cancel: (id: string) => req(`/jobs/${id}`, { method: "DELETE" }),
   remove: (id: string) => req(`/jobs/${id}/purge`, { method: "DELETE" }),

@@ -2,15 +2,17 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Layers } from "lucide-react";
+import { Layers, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuthStore } from "@/lib/auth-store";
-import { useAllJobs } from "@/hooks/use-data";
+import { useAllJobs, useQueues } from "@/hooks/use-data";
 import { StateDot } from "@/components/job-state-badge";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { CreateBatchDialog } from "@/components/jobs/create-batch-dialog";
 import { fmtRelative } from "@/lib/status";
 import type { JobRow } from "@/hooks/use-data";
 
@@ -25,6 +27,19 @@ export default function BatchJobsPage() {
   const router = useRouter();
   const projectId = useAuthStore((s) => s.projectId);
   const { data, error, isLoading, mutate } = useAllJobs(projectId);
+  const { data: queueList } = useQueues(projectId);
+
+  const newBatchTrigger = (
+    <CreateBatchDialog
+      queues={queueList ?? []}
+      onCreated={() => mutate()}
+      trigger={
+        <Button size="sm" className="rounded-lg" disabled={!queueList?.length} aria-label="Enqueue a new batch">
+          <Plus className="size-3.5" aria-hidden="true" /> New Batch
+        </Button>
+      }
+    />
+  );
 
   const batches = useMemo<Batch[]>(() => {
     const map = new Map<string, Batch>();
@@ -46,12 +61,15 @@ export default function BatchJobsPage() {
         icon={Layers}
         title="No batch jobs"
         description="Jobs enqueued through the batch endpoint are grouped here by their batch ID."
+        action={newBatchTrigger}
       />
     );
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    <div className="space-y-4">
+      <div className="flex justify-end">{newBatchTrigger}</div>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
       {batches.map((b, i) => {
         const done = b.jobs.filter((j) => j.status === "completed").length;
         const failed = b.jobs.filter((j) => j.status === "failed" || j.status === "dead").length;
@@ -115,6 +133,7 @@ export default function BatchJobsPage() {
           </motion.div>
         );
       })}
+      </div>
     </div>
   );
 }
