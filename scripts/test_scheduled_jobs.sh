@@ -36,7 +36,7 @@ req() {
 
 expect_code() {
   if [[ "$CODE" == "$2" ]]; then ok "$1 (HTTP $CODE)"
-  else fail "$1" "expected HTTP $2, got $CODE — $(head -c 200 <<<"$BODY_OUT")"; fi
+  else fail "$1" "expected HTTP $2, got $CODE - $(head -c 200 <<<"$BODY_OUT")"; fi
 }
 
 job_status() { req GET "/jobs/$1"; jq -r '.status' <<<"$BODY_OUT"; }
@@ -56,10 +56,10 @@ wait_status() {
 iso_in() { date -u -d "+$1 seconds" +%Y-%m-%dT%H:%M:%SZ; }
 
 echo "=============================================================="
-echo " Scheduled jobs — test suite    $(date '+%F %T')"
+echo " Scheduled jobs - test suite    $(date '+%F %T')"
 echo "=============================================================="
 
-curl -sf "$BASE/health" >/dev/null || { red "API not reachable at $BASE — start it with ./scripts/dev.sh"; exit 1; }
+curl -sf "$BASE/health" >/dev/null || { red "API not reachable at $BASE - start it with ./scripts/dev.sh"; exit 1; }
 
 TOKEN=$(curl -s -X POST "$API/auth/login" -H 'Content-Type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" | jq -r '.access_token // .token // empty')
@@ -75,7 +75,7 @@ new_job() {
 }
 
 echo ""
-echo "=== 1. CREATE — a job scheduled for the future is 'scheduled' ==="
+echo "=== 1. CREATE - a job scheduled for the future is 'scheduled' ==="
 new_job "{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(iso_in 8)\",\"payload\":{\"t\":1}}"; J1=$JOB_ID
 expect_code "create scheduled job" 201
 [[ -n "$J1" ]] && ok "returned job id" || fail "returned job id" "no id in $BODY_OUT"
@@ -83,14 +83,14 @@ S=$(job_status "$J1")
 [[ "$S" == "scheduled" ]] && ok "status is scheduled" || fail "status is scheduled" "got $S"
 
 echo ""
-echo "=== 2. CREATE — a past scheduled_at runs immediately ==="
+echo "=== 2. CREATE - a past scheduled_at runs immediately ==="
 new_job "{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)\"}"; J2=$JOB_ID
 S=$(job_status "$J2")
 [[ "$S" != "scheduled" ]] && ok "past scheduled_at is not left scheduled (status $S)" \
   || fail "past scheduled_at" "still scheduled"
 
 echo ""
-echo "=== 3. PROMOTION — the scheduler promotes it and a worker runs it ==="
+echo "=== 3. PROMOTION - the scheduler promotes it and a worker runs it ==="
 if wait_status "$J1" 45 completed failed dead; then
   [[ "$LAST_STATUS" == "completed" ]] && ok "scheduled job ran and completed" \
     || fail "scheduled job ran" "ended as $LAST_STATUS"
@@ -104,7 +104,7 @@ req GET "/jobs/$J1/logs"
 [[ "$(jq 'length' <<<"$BODY_OUT")" -ge 1 ]] && ok "job log recorded" || fail "job log recorded" "none found"
 
 echo ""
-echo "=== 4. LIST — status filter returns scheduled jobs ==="
+echo "=== 4. LIST - status filter returns scheduled jobs ==="
 new_job "{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(iso_in 3600)\"}"; J3=$JOB_ID
 req GET "/queues/$QUEUE/jobs?status=scheduled&limit=100"
 expect_code "list ?status=scheduled" 200
@@ -114,7 +114,7 @@ jq -e '.data | map(select(.status != "scheduled")) | length == 0' <<<"$BODY_OUT"
   && ok "filter returns only scheduled jobs" || fail "filter purity" "other statuses returned"
 
 echo ""
-echo "=== 5. CANCEL — a scheduled job can be cancelled ==="
+echo "=== 5. CANCEL - a scheduled job can be cancelled ==="
 req DELETE "/jobs/$J3"
 expect_code "cancel scheduled job" 200
 S=$(job_status "$J3"); [[ "$S" == "cancelled" ]] && ok "status is cancelled" || fail "status cancelled" "got $S"
@@ -126,7 +126,7 @@ S=$(job_status "$J3")
   || fail "cancelled job stays cancelled" "scheduler moved it to $S"
 
 echo ""
-echo "=== 6. RETRY — a cancelled job can be re-queued and runs ==="
+echo "=== 6. RETRY - a cancelled job can be re-queued and runs ==="
 req POST "/jobs/$J3/retry"
 expect_code "retry cancelled job" 200
 if wait_status "$J3" 40 completed failed dead; then
@@ -136,13 +136,13 @@ else
 fi
 
 echo ""
-echo "=== 7. RETRY — a scheduled job cannot be retried ==="
+echo "=== 7. RETRY - a scheduled job cannot be retried ==="
 new_job "{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(iso_in 3600)\"}"; J4=$JOB_ID
 req POST "/jobs/$J4/retry"
 expect_code "retry of a scheduled job rejected" 409
 
 echo ""
-echo "=== 8. DELETE — a scheduled job can be purged ==="
+echo "=== 8. DELETE - a scheduled job can be purged ==="
 req DELETE "/jobs/$J4/purge"
 expect_code "purge scheduled job" 200
 req GET "/jobs/$J4"
@@ -151,7 +151,7 @@ req DELETE "/jobs/00000000-0000-0000-0000-000000000000/purge"
 expect_code "purge of unknown job" 404
 
 echo ""
-echo "=== 9. DLQ — a scheduled job that keeps failing lands in the DLQ ==="
+echo "=== 9. DLQ - a scheduled job that keeps failing lands in the DLQ ==="
 new_job "{\"type\":\"always_fail\",\"max_attempts\":2,\"scheduled_at\":\"$(iso_in 6)\"}"; J5=$JOB_ID
 if wait_status "$J5" 60 dead; then ok "failing scheduled job reached 'dead'"
 else fail "failing scheduled job reaches dead" "still $LAST_STATUS"; fi
@@ -174,7 +174,7 @@ if [[ -n "$DLQ_ID" ]]; then
 fi
 
 echo ""
-echo "=== 10. CRON — a recurring job reschedules itself ==="
+echo "=== 10. CRON - a recurring job reschedules itself ==="
 new_job '{"type":"scheduled_cleanup","cron_expression":"*/10 * * * * *"}'; J6=$JOB_ID
 expect_code "create cron job" 201
 if wait_status "$J6" 45 scheduled; then ok "cron job returned to 'scheduled' after its first run"
@@ -185,7 +185,7 @@ DELTA=$(( $(date -d "$RUNAT" +%s) - $(date +%s) ))
 if (( DELTA > -5 && DELTA < 60 )); then
   ok "cron next run_at is the next tick (${DELTA}s away)"
 else
-  fail "cron next run_at computed" "run_at is $RUNAT (${DELTA}s away) — not the next cron tick"
+  fail "cron next run_at computed" "run_at is $RUNAT (${DELTA}s away) - not the next cron tick"
 fi
 req GET "/jobs/$J6/executions"
 RUNS1=$(jq 'length' <<<"$BODY_OUT")
@@ -196,7 +196,7 @@ RUNS2=$(jq 'length' <<<"$BODY_OUT")
   || fail "cron job ran again" "still $RUNS2 executions after 25s"
 
 echo ""
-echo "=== 11. CRON — cancel and purge a recurring job ==="
+echo "=== 11. CRON - cancel and purge a recurring job ==="
 req DELETE "/jobs/$J6/purge"
 expect_code "purge the 10s cron job" 200
 new_job '{"type":"scheduled_cleanup","cron_expression":"0 0 * * * *"}'; J8=$JOB_ID
@@ -211,7 +211,7 @@ req DELETE "/jobs/$J8/purge"
 expect_code "purge cron job" 200
 
 echo ""
-echo "=== 12. IDEMPOTENCY — duplicate key on a scheduled job is rejected ==="
+echo "=== 12. IDEMPOTENCY - duplicate key on a scheduled job is rejected ==="
 KEY="sched-idem-$RANDOM$RANDOM"
 new_job "{\"type\":\"scheduled_cleanup\",\"idempotency_key\":\"$KEY\",\"scheduled_at\":\"$(iso_in 3600)\"}"; J7=$JOB_ID
 expect_code "create with idempotency key" 201
@@ -220,7 +220,7 @@ expect_code "duplicate idempotency key rejected" 409
 [[ -n "$J7" ]] && { req DELETE "/jobs/$J7/purge"; expect_code "cleanup purge" 200; }
 
 echo ""
-echo "=== 13. CRON — an explicit first run time is honoured ==="
+echo "=== 13. CRON - an explicit first run time is honoured ==="
 FIRST=$(iso_in 1800)
 new_job "{\"type\":\"scheduled_cleanup\",\"cron_expression\":\"*/10 * * * * *\",\"scheduled_at\":\"$FIRST\"}"; J9=$JOB_ID
 expect_code "create cron job with scheduled_at" 201
@@ -235,7 +235,7 @@ S=$(job_status "$J9")
 req DELETE "/jobs/$J9/purge"; expect_code "cleanup purge" 200
 
 echo ""
-echo "=== 14. BATCH — scheduled jobs can be created in bulk ==="
+echo "=== 14. BATCH - scheduled jobs can be created in bulk ==="
 req POST "/queues/$QUEUE/jobs/batch" "[{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(iso_in 3600)\"},{\"type\":\"scheduled_cleanup\",\"scheduled_at\":\"$(iso_in 3600)\"}]"
 expect_code "batch create scheduled jobs" 201
 mapfile -t BATCH_IDS < <(jq -r '.job_ids[]' <<<"$BODY_OUT")

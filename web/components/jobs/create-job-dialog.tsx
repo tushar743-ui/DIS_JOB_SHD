@@ -151,7 +151,7 @@ export function CreateJobDialog({
               {errors.partition_key && <p className="text-xs text-destructive">{errors.partition_key.message}</p>}
               <p className="text-xs text-muted-foreground">
                 Jobs sharing a partition key always land on the same shard, so they run in order relative to each
-                other. This queue has {selectedQueue?.shard_count} shards — leave blank for no ordering affinity.
+                other. This queue has {selectedQueue?.shard_count} shards - leave blank for no ordering affinity.
               </p>
             </div>
           )}

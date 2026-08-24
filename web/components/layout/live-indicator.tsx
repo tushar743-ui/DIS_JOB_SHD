@@ -7,7 +7,7 @@ const CONFIG: Record<LiveStatus, { label: string; dot: string; hint: string }> =
   live: {
     label: "Live",
     dot: "bg-emerald-400 animate-pulse",
-    hint: "Connected — updates arrive over WebSocket as they happen.",
+    hint: "Connected - updates arrive over WebSocket as they happen.",
   },
   connecting: {
     label: "Connecting",
@@ -17,12 +17,12 @@ const CONFIG: Record<LiveStatus, { label: string; dot: string; hint: string }> =
   reconnecting: {
     label: "Polling",
     dot: "bg-amber-400 animate-pulse",
-    hint: "Live connection dropped — falling back to periodic polling while it retries.",
+    hint: "Live connection dropped - falling back to periodic polling while it retries.",
   },
   offline: {
     label: "Polling",
     dot: "bg-zinc-400",
-    hint: "No live connection — data refreshes on a timer instead.",
+    hint: "No live connection - data refreshes on a timer instead.",
   },
 };
 

@@ -38,7 +38,7 @@ USAGE
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
 curl -sf "$BASE/health" >/dev/null || {
-  echo "API not reachable at $BASE — start it with 'make dev' first" >&2
+  echo "API not reachable at $BASE - start it with 'make dev' first" >&2
   exit 1
 }
 
@@ -96,7 +96,7 @@ if [[ "$CREATED" == "0" && "$SKIPPED" == "0" ]]; then
 fi
 
 printf 'queue     %s (%s)\n' "$QUEUE_NAME" "$QUEUE_ID"
-printf 'schedule  %s — next run %s\n' "$CRON_EXPR" "$NEXT_RUN"
+printf 'schedule  %s - next run %s\n' "$CRON_EXPR" "$NEXT_RUN"
 printf 'created   %s\n' "$CREATED"
 printf 'skipped   %s (already seeded)\n' "$SKIPPED"
 printf 'batch_id  %s\n' "$(jq -r '.batch_id // "-"' <<<"$RESPONSE")"

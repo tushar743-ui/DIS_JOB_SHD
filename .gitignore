@@ -1,26 +1,30 @@
 .env
 .env.local
 .env.*.local
-.env.example
 
 claude.md
+CLAUDE.md
 .claude/
+.agents/
 .impeccable/
+.dev/
 skills-lock.json
-/home/tushar/Desktop/Dev/dis-job-sd/claude.md
+SKILL.md
+AGENTS.md
+
 bin/
+migrate
+/api/api
+/worker/worker
 vendor/
 *.test
 *.out
+*.log
 
 web/.next/
 web/out/
 web/node_modules/
 web/.turbo/
 
-*.log
-
 .DS_Store
 Thumbs.db
-
-.dev/

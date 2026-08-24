@@ -143,7 +143,7 @@ export function QueueConfigSheet({
                 />
                 {errors.shard_count && <p className="text-xs text-destructive">{errors.shard_count.message}</p>}
                 <p className="text-xs text-muted-foreground">
-                  1 keeps sharding off — any worker may claim from this queue. Above 1 splits it into shards so
+                  1 keeps sharding off - any worker may claim from this queue. Above 1 splits it into shards so
                   multiple workers process it in parallel without contending on the same rows.
                 </p>
               </div>

@@ -74,7 +74,7 @@ if [[ -f "$ROOT/.env" ]]; then
   source "$ROOT/.env"
   set +a
 else
-  warn "no .env in $ROOT — copy .env.example to .env and fill it in"
+  warn "no .env in $ROOT - copy .env.example to .env and fill it in"
 fi
 
 : "${PORT:=8080}"
@@ -135,7 +135,7 @@ check_port() {
   var=$( [[ "$label" == api ]] && echo PORT || echo WEB_PORT )
   pid="$(port_holder_pid "$p")"
   if (( KILL_PORT )) && [[ -n "$pid" ]]; then
-    warn "port $p ($label) held by $(port_holder_desc "$p") — killing it (--kill-port)"
+    warn "port $p ($label) held by $(port_holder_desc "$p") - killing it (--kill-port)"
     kill -TERM "$pid" 2>/dev/null
     for _ in $(seq 1 20); do
       port_in_use "$p" || return 0
@@ -164,7 +164,7 @@ if [[ "$db_host" =~ ^(localhost|127\.0\.0\.1|\[::1\])$ ]]; then
       sleep 1
     done
   else
-    warn "DATABASE_URL points at localhost but docker is not installed — start Postgres yourself"
+    warn "DATABASE_URL points at localhost but docker is not installed - start Postgres yourself"
   fi
 fi
 
@@ -234,7 +234,7 @@ start_service() {
       (( restarting )) && continue
 
       wait "$child" 2>/dev/null; code=$?
-      echo "── exited (code $code) — waiting for a code change ──"
+      echo "── exited (code $code) - waiting for a code change ──"
       while :; do
         sleep 1
         fp="$(go_fingerprint "$watchdir")"
@@ -321,7 +321,7 @@ while :; do
   for idx in "${!PIDS[@]}"; do
     if ! kill -0 "${PIDS[$idx]}" 2>/dev/null; then
       wait "${PIDS[$idx]}" 2>/dev/null; code=$?
-      warn "▸ ${NAMES[$idx]} exited (code $code) — stopping the rest"
+      warn "▸ ${NAMES[$idx]} exited (code $code) - stopping the rest"
       shutdown
       exit "$code"
     fi

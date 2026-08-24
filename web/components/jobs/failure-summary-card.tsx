@@ -102,7 +102,7 @@ export function FailureSummaryCard({ jobId, jobStatus }: { jobId: string; jobSta
           {summary.stale && (
             <p className="flex items-center gap-1.5 text-xs font-medium text-state-scheduled">
               <AlertTriangle className="size-3.5" aria-hidden="true" />
-              This job has failed again since this summary was generated — it may be out of date.
+              This job has failed again since this summary was generated - it may be out of date.
             </p>
           )}
 

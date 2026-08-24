@@ -70,7 +70,7 @@ export default function DashboardPage() {
       },
       {
         label: "Avg Duration",
-        value: avgMs ? fmtDuration(avgMs) : "—",
+        value: avgMs ? fmtDuration(avgMs) : "-",
         headline: `Across ${metrics?.queues.length ?? 0} queues`,
         detail: "Mean execution time over 24h",
       },

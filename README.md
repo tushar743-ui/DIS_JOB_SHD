@@ -1,112 +1,464 @@
 # dis-job-queue
 
-A distributed job queue system with priority scheduling, retry policies, cron support, dead-letter queue, and a real-time dashboard.
+A production-inspired distributed job scheduling platform. It executes asynchronous
+background jobs across multiple worker processes with priority scheduling, configurable
+retry policies, cron recurrence, workflow dependencies, queue sharding, a dead-letter
+queue, role-based access control, and a real-time operator dashboard.
+
+Full REST/WebSocket API reference: **[API.md](API.md)**.
+
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [System Architecture](#system-architecture)
+- [Entity-Relationship Diagram](#entity-relationship-diagram)
+- [How It Works](#how-it-works)
+- [Frontend Dashboard](#frontend-dashboard)
+
 
 ---
 
 ## Quick Start
 
-The whole stack runs from a single terminal:
+**Requires:** Go 1.25+, Node 20+, and Docker (or an existing Postgres 16 + Redis 7,
+e.g. Neon + Upstash).
 
+**1. Clone and configure**
 ```bash
-cp .env.example .env    # first run only - set DATABASE_URL, JWT_SECRET, PROJECT_ID
-make dev                # same as ./scripts/dev.sh
-WEB_PORT=3000 make dev  # run on a different port
-fuser -k 3000/tcp  # free ports if something else is using them
-docker stop "app-name" # stop a container that is holding the port
+git clone <repo-url> && cd dis-job-queue
+cp .env.example .env   # set DATABASE_URL, JWT_SECRET, PROJECT_ID
 ```
 
-That starts the API on `:8080`, a worker, and the dashboard on `:3000`, streams all
-three log streams into the one terminal behind a per-service tag, and stops every
-process cleanly on Ctrl-C.
-
-```
-┌─ dis-job-queue dev ────────────────────────────────────
-│  api    http://localhost:8080
-│  web    http://localhost:3000
-│  worker 1 × queues: default,email,notifications
-└─ Ctrl-C stops everything ──────────────────────────────
-
-api      │ 1:07PM INF API server starting port=8080
-worker   │ 1:07PM INF worker started concurrency=5 queues=["default"]
-web      │ ✓ Ready in 1286ms
-
-✓ API ready at http://localhost:8080  ·  dashboard http://localhost:3000
+**2. Database + Redis** (pick one)
+```bash
+# a) local, automatic - leave DATABASE_URL/REDIS_URL at their .env.example
+#    defaults; step 4 starts Postgres/Redis via Docker for you
+# b) fully containerized - everything, incl. Postgres/Redis, in containers
+docker compose up
+# c) remote - point DATABASE_URL/REDIS_URL at an existing instance
 ```
 
-Prerequisites: Go 1.25+ and Node 20+. Docker is needed only for a local
-Postgres/Redis or for the fully containerised path.
+**3. Apply the schema** (first run only, skip for path b, it self-bootstraps)
+```bash
+./scripts/dev.sh --migrate
+```
+Needs the `migrate` CLI once:
+`go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
+
+**4. Run**
+```bash
+make dev
+```
+Go and npm packages install themselves on first run, nothing to do manually. Starts
+the API (`:8080`), a worker, and the dashboard (`:3000`) in one terminal; Ctrl-C stops
+everything.
+
+```
+   dis-job-queue dev 
+   api    http://localhost:8080
+   web    http://localhost:3000
+   worker 1 x queues: default,email,notifications
+  
+```
+
+**5. Verify API**
+```bash
+curl localhost:8080/health   
+```
+Then open `http://localhost:3000`.
 
 ### Variations
 
 | Command | What it runs |
 | --- | --- |
 | `make dev` | API + worker + dashboard |
-| `make dev-watch` | the same, and rebuilds/restarts the Go services on any `.go` change |
+| `make dev-watch` | same, rebuilds/restarts Go services on any `.go` change |
 | `make dev-api` · `make dev-worker` · `make dev-web` | a single service |
-| `./scripts/dev.sh --workers 3` | three worker processes against the same queues |
-| `./scripts/dev.sh --migrate` | apply database migrations before starting |
-| `./scripts/dev.sh --kill-port` | free `:8080` / `:3000` when something else holds them |
+| `./scripts/dev.sh --workers 3` | three worker processes, same queues |
+| `./scripts/dev.sh --migrate` | apply migrations before starting |
+| `./scripts/dev.sh --kill-port` | free `:8080` / `:3000` if held |
 | `PORT=8081 WEB_PORT=3001 make dev` | different ports |
-| `docker compose up` | everything in containers, including Postgres and Redis |
+| `docker compose up` | everything containerized, incl. Postgres/Redis |
 
-`./scripts/dev.sh --help` lists every flag. The script also loads `.env` once and
-passes it to all three services (so no per-directory env files), installs the web
-dependencies on first run, brings up the compose Postgres/Redis when
-`DATABASE_URL` points at localhost, names the process holding a busy port instead
-of failing with `EADDRINUSE`, tees each service log to `.dev/logs/`, and takes the
-remaining services down if one of them exits - no orphaned processes to hunt for.
+`./scripts/dev.sh --help` lists every flag.
 
 ---
 
 ## System Architecture
 
 ```mermaid
-flowchart TD
-    Browser["🖥️ Browser / API Client"]
-
-    subgraph Frontend["Next.js Dashboard  · port 3000"]
-        UI["Pages: Jobs · Queues · Workers\nDLQ · Metrics · Settings"]
+flowchart TB
+    subgraph Clients["Clients"]
+        Browser["Browser\nOperator Dashboard"]
+        ExtClient["External API / CLI Clients"]
     end
 
-    subgraph API["Go API Server  · port 8080  (chi router)"]
+    subgraph Frontend["Next.js Dashboard  ·  port 3000"]
         direction TB
-        MW["Middleware\nJWT Auth · Redis Rate Limiter · CORS · Logger"]
-        Routes["REST Handlers\n/auth  /orgs  /projects  /queues\n/jobs  /workers  /dlq  /metrics"]
-        MW --> Routes
+        Pages["App Router pages\nJobs · Queues · Workers · DLQ · Metrics · Dependencies"]
+        SWR["SWR data layer\npolling fallback"]
+        WSHook["useLiveEvents()\nWebSocket client"]
     end
 
-    subgraph Workers["Worker Pods  ×N  (Go)"]
+    subgraph API["Go API Server  ·  port 8080  (chi router)"]
         direction TB
-        Poller["Poller\nSELECT … FOR UPDATE SKIP LOCKED"]
-        Executor["Executor\nconcurrency semaphore · timeout · retry"]
-        Scheduler["Cron Scheduler\nschedule → queued promotion"]
-        Heartbeat["Heartbeat\nworker_heartbeats every 10 s"]
+        MW["Middleware chain\nRecoverer -> RequestID -> Logger -> CORS -> RateLimiter -> JWT Auth -> RBAC"]
+        Handlers["REST Handlers\nauth · orgs · projects · retry-policies\nqueues · jobs · workers · dlq · metrics · failure-summary"]
+        Hub["WebSocket Hub\none Redis subscription per project"]
+        MW --> Handlers
+        MW --> Hub
+    end
+
+    subgraph Shared["shared/ module  (imported by API and Worker)"]
+        direction TB
+        Events["events\nRedis pub/sub, per-project channels"]
+        Lock["lock\nSET NX PX + Lua CAS release, fencing tokens"]
+        Shard["shard\nrendezvous (HRW) ownership + membership registry"]
+    end
+
+    subgraph WorkerPool["Worker Pods  x N  (Go)"]
+        direction TB
+        Poller["Poller\nSELECT ... FOR UPDATE SKIP LOCKED\nshard-aware, dependency-aware claim"]
+        Executor["Executor\nconcurrency semaphore · per-job timeout · retry/back-off"]
+        Scheduler["Scheduler\nleader-elected via Lock\npromote scheduled->queued · cron · unblock DAG · reclaim stuck"]
+        Heartbeat["Heartbeat\nworker_heartbeats every 10s"]
         Poller --> Executor
     end
 
-    subgraph PG["PostgreSQL 16"]
-        direction TB
-        Schema["users · organizations · projects\nqueues · retry_policies\njobs  ➜  status FSM\njob_executions · job_logs\ndead_letter_queue\nworkers · worker_heartbeats\nrefresh_tokens"]
-    end
+    PG[("PostgreSQL 16  (Neon)\nsingle source of truth for all durable state")]
+    Redis[("Redis 7  (Upstash)\nrate limits · pub/sub · locks · shard registry · AI quota")]
+    Groq["Groq LLM API\noptional - AI failure summaries"]
 
-    Redis["Redis 7\nRate-limit counters\n(IP-based sliding window)"]
+    Browser -- "HTTPS / JWT" --> Frontend
+    ExtClient -- "HTTPS / JWT or API key" --> API
+    Frontend -- "REST" --> API
+    Frontend -. "WSS" .-> Hub
+    SWR --> Pages
+    WSHook --> Pages
 
-    Browser -->|"HTTP"| Frontend
-    Frontend -->|"REST / JWT"| API
-    Browser -->|"REST / JWT"| API
+    Handlers --> PG
+    Handlers -- "rate limit · AI quota · dist. lock" --> Redis
+    Handlers -. "failure summaries" .-> Groq
 
-    API -->|pgxpool| PG
-    API -->|INCR / EXPIRE| Redis
+    Hub <-- "SUBSCRIBE" --> Events
+    Events <--> Redis
 
-    Workers -->|"FOR UPDATE SKIP LOCKED\nclaim jobs"| PG
-    Workers -->|heartbeat rows| PG
-    Workers -->|execution & log rows| PG
-    Workers -->|Redis client| Redis
-
-    Executor -->|"failed → DLQ\nretry → re-queue"| PG
-    Scheduler -->|"next_run_at update"| PG
+    Poller --> PG
+    Poller <--> Shard
+    Poller <--> Events
+    Executor --> PG
+    Executor --> Events
+    Scheduler --> PG
+    Scheduler <--> Lock
+    Heartbeat --> PG
+    Shard <--> Redis
+    Lock <--> Redis
 ```
+
+### Layers, in order
+
+1. **Clients.** The browser dashboard and any external API/CLI client speak the same
+   authenticated REST API, there is no separate internal API.
+2. **Frontend (Next.js, port 3000).** Server-rendered pages backed by an SWR polling
+   layer for baseline freshness, augmented by a native `WebSocket` connection
+   (`useLiveEvents`) that pushes targeted revalidations the moment something changes,
+   so the UI updates in well under a second instead of waiting for the next poll tick.
+3. **API server (Go, chi router, port 8080).** A single stateless process (horizontally
+   scalable behind a load balancer) that terminates every client request. It never
+   executes a job itself, its role is validation, authorization, persistence, and
+   relaying management operations; execution is entirely the worker pool's
+   responsibility.
+4. **`shared/` module.** Three contracts that the API and every worker import from the
+   same package, so they can never drift out of sync with each other:
+   - `events`, a fire-and-forget Redis pub/sub wrapper used both to push WebSocket
+     updates to browsers and to wake idle workers the instant a job becomes claimable.
+   - `lock`, a Redis distributed lock (`SET NX PX` acquire, a Lua compare-and-swap
+     release so a stale holder can never delete a successor's lock, monotonic fencing
+     tokens, and an auto-renewing `Guard` for long-lived leadership).
+   - `shard`, a rendezvous-hashing (HRW) shard-ownership calculation plus a
+     TTL-pruned Redis registry of live workers, used to split high-volume queues across
+     the worker pool without a central coordinator.
+5. **Worker pool (Go, N replicas).** Each pod runs four concurrent subsystems (poller,
+   executor, scheduler, heartbeat), detailed in [How It Works](#how-it-works).
+6. **PostgreSQL (Neon).** The single source of truth for every piece of durable state:
+   job records, queue configuration, worker health, execution logs, dead-letter
+   entries, auth tokens, and AI summaries. The system survives a full Redis restart
+   with zero data loss, because nothing durable is ever stored anywhere else.
+7. **Redis (Upstash).** Deliberately kept narrow and entirely disposable: rate-limit
+   counters, the pub/sub event bus, distributed locks, the shard membership registry,
+   and the AI-summary quota counter. Every one of these is either advisory or
+   self-healing when Redis is unavailable (see the degraded-mode notes on
+   [sharding](#queue-sharding-and-distributed-locking) below), so operators can reason
+   about correctness by looking at Postgres alone.
+8. **Groq LLM API (optional).** Called only from `POST /jobs/{id}/failure-summary`, and
+   only when `GROQ_API_KEY` is configured; every other code path is fully functional
+   with it absent.
+
+---
+
+## Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    USERS ||--o{ ORGANIZATION_MEMBERS : "belongs to"
+    ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has"
+    ORGANIZATIONS ||--o{ PROJECTS : "owns"
+    PROJECTS ||--o{ RETRY_POLICIES : "defines"
+    PROJECTS ||--o{ QUEUES : "owns"
+    PROJECTS ||--o{ WORKERS : "registers"
+    RETRY_POLICIES |o--o{ QUEUES : "applied to"
+    QUEUES ||--o{ JOBS : "contains"
+    QUEUES ||--o{ DEAD_LETTER_QUEUE : "scopes"
+    JOBS ||--o{ JOB_EXECUTIONS : "attempted as"
+    JOBS ||--o{ JOB_LOGS : "logs"
+    JOBS |o--o| DEAD_LETTER_QUEUE : "terminates into"
+    JOBS |o--o| JOB_FAILURE_SUMMARIES : "summarized by"
+    JOBS ||--o{ JOB_DEPENDENCIES : "depends on (job_id)"
+    JOBS ||--o{ JOB_DEPENDENCIES : "blocks (depends_on_job_id)"
+    WORKERS ||--o{ WORKER_HEARTBEATS : "emits"
+    WORKERS |o--o{ JOBS : "claims"
+    WORKERS |o--o{ JOB_EXECUTIONS : "executes"
+    USERS ||--o{ REFRESH_TOKENS : "holds"
+    USERS |o--o{ DEAD_LETTER_QUEUE : "resolves"
+    USERS |o--o{ JOB_FAILURE_SUMMARIES : "generates"
+
+    USERS {
+        uuid id PK
+        text email UK
+        text password_hash
+        text name
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ORGANIZATIONS {
+        uuid id PK
+        text name
+        text slug UK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    ORGANIZATION_MEMBERS {
+        uuid org_id PK, FK
+        uuid user_id PK, FK
+        text role "owner admin member viewer"
+        timestamptz joined_at
+    }
+
+    PROJECTS {
+        uuid id PK
+        uuid org_id FK
+        text name
+        text slug
+        text api_key_hash UK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    RETRY_POLICIES {
+        uuid id PK
+        uuid project_id FK
+        text name
+        text strategy "fixed / linear / exponential"
+        int max_attempts
+        int initial_delay_ms
+        int max_delay_ms
+        numeric multiplier
+    }
+
+    QUEUES {
+        uuid id PK
+        uuid project_id FK
+        uuid retry_policy_id FK
+        text name
+        text description
+        int priority "1-10"
+        int concurrency_limit
+        int shard_count "1-64"
+        boolean paused
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    JOBS {
+        uuid id PK
+        uuid queue_id FK
+        text type
+        jsonb payload
+        job_status status "queued/scheduled/claimed/running/completed/failed/cancelled/dead/blocked"
+        int priority "1-10"
+        int max_attempts
+        int attempt_count
+        timestamptz scheduled_at
+        timestamptz run_at
+        int timeout_secs
+        text cron_expression
+        timestamptz next_run_at
+        uuid batch_id
+        text idempotency_key UK
+        text_array tags
+        int shard
+        text partition_key
+        text last_error
+        jsonb result
+        uuid claimed_by FK
+        timestamptz claimed_at
+        timestamptz completed_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    JOB_DEPENDENCIES {
+        uuid job_id PK, FK
+        uuid depends_on_job_id PK, FK
+        timestamptz created_at
+    }
+
+    JOB_EXECUTIONS {
+        uuid id PK
+        uuid job_id FK
+        uuid worker_id FK
+        int attempt_number
+        execution_status status "running/completed/failed/timed_out/cancelled"
+        timestamptz started_at
+        timestamptz completed_at
+        int duration_ms
+        text error_message
+        jsonb result
+    }
+
+    JOB_LOGS {
+        bigint id PK
+        uuid job_id FK
+        uuid execution_id FK
+        text level "debug/info/warn/error"
+        text message
+        jsonb metadata
+        timestamptz logged_at
+    }
+
+    DEAD_LETTER_QUEUE {
+        uuid id PK
+        uuid job_id UK, FK
+        uuid queue_id FK
+        text final_error
+        int attempts
+        timestamptz moved_at
+        timestamptz resolved_at
+        uuid resolved_by FK
+    }
+
+    WORKERS {
+        uuid id PK
+        uuid project_id FK
+        text hostname
+        int pid
+        text version
+        text status "active/draining/offline"
+        int concurrency
+        text_array handled_types
+        timestamptz registered_at
+        timestamptz last_heartbeat_at
+    }
+
+    WORKER_HEARTBEATS {
+        bigint id PK
+        uuid worker_id FK
+        timestamptz heartbeat_at
+        int jobs_running
+        int jobs_completed
+        jsonb metadata
+    }
+
+    REFRESH_TOKENS {
+        uuid id PK
+        uuid user_id FK
+        text token_hash UK
+        timestamptz expires_at
+        timestamptz created_at
+        timestamptz revoked_at
+    }
+
+    JOB_FAILURE_SUMMARIES {
+        uuid job_id PK, FK
+        text summary
+        text likely_cause
+        text suggested_action
+        text category
+        text confidence "low/medium/high"
+        boolean is_transient
+        text model
+        text input_hash
+        int input_tokens
+        int output_tokens
+        uuid generated_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+```
+
+### Design rationale
+
+**Normalization.** The schema is in third normal form throughout: queue configuration
+(`retry_policies`) is factored out of `queues` so one policy can be shared by many
+queues; job state (`jobs`), attempt history (`job_executions`), and structured log
+output (`job_logs`) are three separate tables rather than one wide table, because they
+have different write patterns (one row per job vs. one row per attempt vs. many rows
+per attempt) and different retention needs. `job_dependencies` is a pure join table
+expressing a many-to-many self-relationship on `jobs`, with a `CHECK` constraint
+(`job_id <> depends_on_job_id`) that makes a self-dependency impossible at the database
+level rather than relying on application code to catch it.
+
+**Primary keys.** Every table uses a `UUID` surrogate key (`gen_random_uuid()`) except
+the two purely additive, high-volume log tables (`worker_heartbeats`, `job_logs`),
+which use a `BIGSERIAL` for cheaper sequential inserts and natural chronological
+ordering. `organization_members` and `job_dependencies` use composite primary keys
+(`(org_id, user_id)`, `(job_id, depends_on_job_id)`) since the pair itself is the
+natural identity of the row, an additional surrogate key would only add an unused
+index.
+
+**Foreign keys and cascading.** Every foreign key is declared explicitly with an
+`ON DELETE` policy chosen per relationship rather than a blanket default:
+- `CASCADE` where the child has no independent meaning once the parent is gone:
+  `organization_members`, `projects`, `queues`, `jobs`, `job_executions`, `job_logs`,
+  `job_dependencies`, `dead_letter_queue`, `job_failure_summaries`, `refresh_tokens`,
+  `worker_heartbeats`. Deleting an organization cleanly removes everything beneath it
+  in one statement, with no orphaned rows possible.
+- `SET NULL` where the child clearly outlives the parent and losing the reference is
+  just losing an attribution, not the row's meaning: `queues.retry_policy_id` (a queue
+  keeps running with the platform's default back-off if its named policy is deleted),
+  `jobs.claimed_by` (a job is not deleted just because the worker that touched it was
+  deregistered), `job_executions.worker_id`, `dead_letter_queue.resolved_by`,
+  `job_failure_summaries.generated_by`.
+
+**Indexes.** The two indexes that matter most for correctness under load both back the
+worker's hot-path queries directly:
+- `idx_jobs_poll` on `(queue_id, shard, run_at, priority DESC) WHERE status='queued'`
+  is a **partial** index, it only covers rows the poller can actually claim, so it
+  stays small and fast no matter how many millions of `completed` rows accumulate in
+  the same table. This is the index `FOR UPDATE SKIP LOCKED` walks on every poll tick.
+- `idx_jobs_reclaim` on `claimed_at WHERE claimed_at IS NOT NULL AND status IN
+  ('claimed','running')` lets the scheduler's stuck-job sweep find abandoned claims
+  (a worker that crashed mid-execution) without scanning the whole table.
+
+Every other index follows the same principle, scoped to exactly the query it serves:
+`idx_jobs_status` for the dashboard's status filters, `idx_jobs_batch` (partial, `WHERE
+batch_id IS NOT NULL`) for batch lookups, `idx_jobs_scheduled` (partial, `WHERE
+status='scheduled'`) for the cron/delay promotion sweep, `idx_executions_job` and
+`idx_logs_job` for a job's detail page, `idx_workers_live` (partial, `WHERE
+status='active'`) for the "who's alive right now" dashboard query, and `idx_dlq_pending`
+(partial, `WHERE resolved_at IS NULL`) for the DLQ inbox view.
+
+**Performance considerations.** `jobs.status` is a Postgres `ENUM`
+(`job_status`), which is both smaller on disk than `TEXT` and self-documenting as a
+`CHECK` constraint that can never drift. Every partial index above trades a small
+amount of write overhead (Postgres must decide whether a new row's predicate matches)
+for a much smaller, much hotter index that stays fast as the table grows into the
+millions of historical rows, exactly the shape a job queue's `jobs` table takes over
+time: a small live working set sitting on top of a large cold archive.
 
 ---
 
@@ -114,355 +466,193 @@ flowchart TD
 
 ### Design Philosophy
 
-PostgreSQL is the single source of truth for every piece of durable state in the system - job records, queue configuration, worker health, execution logs, dead-letter entries, and auth tokens all live there. Redis is intentionally kept narrow: it holds only ephemeral rate-limit counters and is never used as a primary store. This choice means the system survives a Redis restart with no data loss, and operators can reason about system state by querying a single relational database rather than reconciling two stores.
-
----
+PostgreSQL is the single source of truth for every piece of durable state in the
+system. Redis is intentionally kept narrow, purely coordination and caching, and is
+never the only place any fact lives. This means the system survives a Redis restart
+with no data loss, and operators can reason about system state by querying one
+relational database rather than reconciling two stores.
 
 ### Resource Hierarchy
 
-Everything in the system is scoped to a multi-tenant hierarchy:
+Everything is scoped to a multi-tenant hierarchy:
 
 ```
-Organization → Project → Queue → Job
+Organization -> Project -> Queue -> Job
 ```
 
-An **Organization** groups related teams or customers. A **Project** belongs to one organization and acts as a logical namespace for work. A **Queue** belongs to a project and carries the scheduling configuration - concurrency limits, retry policies (fixed / linear / exponential back-off), max attempts, and an optional cron expression for recurring execution. A **Job** is the unit of work: it belongs to a queue, holds a JSON payload, a numeric priority (1–10, where lower numbers run first), an optional idempotency key, and a status that advances through the job lifecycle FSM.
-
----
+An **Organization** groups related teams or customers. A **Project** belongs to one
+organization and namespaces work within it, and carries its own API key. A **Queue**
+belongs to a project and carries scheduling configuration: priority, concurrency limit,
+an optional retry policy, and an optional shard count. A **Job** is the unit of work: it
+belongs to a queue, holds a JSON payload, a numeric priority (1-10, higher runs first),
+an optional idempotency key, an optional set of upstream dependencies, and a status that
+advances through the [job lifecycle FSM](API.md#job-status-fsm).
 
 ### Authentication & Authorization
 
-Clients authenticate by posting credentials to `POST /auth/login`. The API issues a short-lived JWT access token (signed with a server secret, carrying the user's ID and organization membership) and a long-lived refresh token. Refresh tokens are stored in the `refresh_tokens` table in PostgreSQL so they can be revoked server-side; the JWT itself is stateless and validated on every protected request by the JWT middleware layer. Every API route downstream of the middleware receives a verified identity, and resource access is scoped so a user in organization A cannot read or modify jobs belonging to organization B.
+Clients authenticate against `POST /auth/login`, receiving a short-lived JWT access
+token and a long-lived, rotating refresh token persisted in Postgres so it can be
+revoked server-side. Every protected route then re-derives the caller's role for that
+specific resource from `organization_members` on every request (see
+[Authorization (RBAC)](API.md#authorization-rbac) in the API docs for the full
+four-role model), so removing someone from an organization takes effect on their very
+next request rather than waiting for their access token to expire.
 
-Redis enforces a sliding-window IP-level rate limit (200 requests per minute per IP address) via atomic `INCR` / `EXPIRE` operations. This sits in the middleware chain before auth, so even unauthenticated abuse is shed at the edge.
-
----
+A Redis-backed sliding-window rate limiter (200 requests/minute per IP by default) sits
+in the middleware chain ahead of authentication, so even unauthenticated abuse is shed
+at the edge before it reaches a handler.
 
 ### API Server
 
-The Go API server runs on port 8080 using the `chi` router. Requests pass through a middleware stack in this order:
-
-1. **Logger** - records method, path, latency, and response code.
-2. **CORS** - sets appropriate headers for the frontend origin.
-3. **Redis Rate Limiter** - rejects requests exceeding the per-IP sliding-window threshold.
-4. **JWT Auth** - validates the bearer token and injects the identity into the request context.
-
-After the middleware stack, requests reach typed REST handlers organized by resource: `/auth`, `/orgs`, `/projects`, `/queues`, `/jobs`, `/workers`, `/dlq`, and `/metrics`. Handlers talk to PostgreSQL through a `pgxpool` connection pool, which manages a bounded set of connections and reuses them across concurrent requests without exhausting database connection slots.
-
-The API never executes jobs itself. Its role is to accept job submissions, serve state queries, expose metrics, and relay management operations (requeue from DLQ, drain a queue, update retry policy). Execution is entirely the responsibility of worker pods.
-
----
+The Go API server runs on port 8080 using the `chi` router. Requests pass through, in
+order: **Recoverer** (panics become a `500`, not a crashed process), **RequestID**,
+**Logger** (method, path, latency, status, with the WebSocket `?token=` query parameter
+redacted), **CORS** (an explicit origin allowlist, not a wildcard, once
+`CORS_ORIGINS` is set), the **rate limiter**, **JWT auth**, and finally the
+per-route **RBAC** check. Handlers talk to Postgres through a single shared `pgxpool`
+connection pool, bounding the number of open connections regardless of request
+concurrency.
 
 ### Job Lifecycle (Status FSM)
 
-A job moves through the following states:
-
 ```
-queued → running → succeeded
-                ↘ failed → (retry) → queued
-                         → (max attempts exhausted) → dead
-scheduled → queued  (promoted by cron scheduler)
+scheduled --(due)--> queued --(claimed)--> claimed --(handler starts)--> running
+                        ^                                                    |
+     blocked --(deps completed)--+                                          |
+                                                                              v
+queued/scheduled/blocked --(cancel)--> cancelled                completed / failed / dead
+blocked --(upstream job died permanently)--> cancelled
+failed --(attempts remain)--> queued  ·  failed --(attempts exhausted)--> dead
 ```
 
-- **queued** - ready to be picked up by a worker.
-- **scheduled** - a future-dated or recurring job waiting for its `next_run_at` time.
-- **running** - claimed by a specific worker; the `job_executions` row is open.
-- **succeeded** - executor reported a successful result; execution row is closed with duration and output.
-- **failed** - executor reported an error; retry policy is consulted.
-- **dead** - all retry attempts exhausted; a `dead_letter_queue` row is written and the job is removed from normal processing.
+| Status | Meaning |
+| --- | --- |
+| `scheduled` | Future-dated, or a cron job waiting for its next tick |
+| `blocked` | Waiting on one or more incomplete `depends_on` jobs |
+| `queued` | Eligible for claim right now |
+| `claimed` | Reserved by a worker (`FOR UPDATE SKIP LOCKED`), not executing yet |
+| `running` | Executing inside a worker goroutine under its `timeout_secs` deadline |
+| `completed` | Finished successfully (a cron job is immediately re-armed to `scheduled`) |
+| `failed` | Errored with attempts remaining; requeued after a back-off delay |
+| `dead` | Attempts exhausted; a `dead_letter_queue` row is written in the same transaction |
+| `cancelled` | User-cancelled, or auto-cancelled because a dependency reached a terminal failure |
 
-State transitions are written as atomic updates inside the same PostgreSQL transaction that claims or closes the job, so there is no window in which a job is in an ambiguous state.
-
----
+State transitions are written as atomic updates inside the same transaction that claims
+or closes the job, so there is no window in which a job's status and its side effects
+(a DLQ row, an execution row) can disagree.
 
 ### Worker Pods
 
-One or more worker pods run as independent Go processes (or containers). Each pod contains three concurrent subsystems:
+Each worker pod is an independent Go process running four concurrent subsystems.
 
-#### Poller + Executor
+**Poller + Executor.** The poller issues a single `UPDATE ... WHERE ... FOR UPDATE
+SKIP LOCKED RETURNING ...` that atomically claims up to as many jobs as the executor
+has free capacity for. The predicate is shard-aware (a pod only claims from queues, or
+shards of queues, it owns) and dependency-aware (`NOT EXISTS` an incomplete upstream
+job) in the same statement, so a job can never be claimed before its dependencies are
+satisfied, even if the `blocked` status bookkeeping is momentarily behind. `FOR UPDATE
+SKIP LOCKED` is the entire concurrency mechanism: when multiple pods race for the same
+row, Postgres grants the lock to exactly one and the rest silently move on to the next
+candidate, no application-level locking, no separate queue broker, no wasted round
+trips. Claimed jobs are handed to the **Executor**, which runs each inside its own
+goroutine under a **concurrency semaphore** (bounding how many run in parallel per pod)
+and a **per-job `context.WithTimeout`**. On failure with attempts remaining, it computes
+the next retry delay from the queue's back-off policy (fixed, linear, or exponential,
+each capped at `max_delay_ms`) and requeues; on final failure it writes the job to
+`dead` and inserts a `dead_letter_queue` row in the same statement.
 
-The Poller runs a tight loop issuing:
+**Scheduler.** A leader-elected goroutine (leadership held via the `shared/lock`
+distributed lock, so exactly one pod runs it per project at a time) wakes every five
+seconds and runs an idempotent sweep: promote due `scheduled` jobs to `queued`, compute
+the next run for recurring cron jobs, unblock any `blocked` job whose dependencies just
+completed, cancel any `blocked` job whose upstream died permanently, and reclaim jobs
+stuck in `claimed`/`running` past a grace period (a pod that crashed mid-execution).
+Because every one of these statements is itself idempotent and safe to run
+concurrently, losing Redis does not stop the sweep, it simply runs unguarded on every
+pod instead of on one elected leader, trading a little redundant work for continued
+availability.
 
-```sql
-SELECT id, payload, priority, queue_id, ...
-FROM jobs
-WHERE status = 'queued'
-  AND queue_id = $1
-  AND next_run_at <= NOW()
-ORDER BY priority ASC, created_at ASC
-FOR UPDATE SKIP LOCKED
-LIMIT $2
-```
+**Heartbeat.** Each pod writes a `worker_heartbeats` row every ten seconds (hostname,
+PID, running/completed counts). The API's `/workers` and `/workers/{id}` endpoints, and
+the `active_workers` metric, only count a worker as live if its heartbeat is fresher
+than two minutes, so a pod that crashed without deregistering is correctly reported as
+gone rather than lingering forever.
 
-`FOR UPDATE SKIP LOCKED` is the key concurrency mechanism. When multiple worker pods race for the same row, Postgres grants the lock to exactly one of them and the others silently skip that row and move to the next. No application-level locking, no queue table in Redis, no external coordinator - the database itself serializes job acquisition with no wasted round trips.
+### Queue Sharding and Distributed Locking
 
-Claimed jobs are handed to the **Executor**. The Executor runs each job inside a goroutine and enforces two limits simultaneously:
+A queue's `shard_count` (1-64, default 1) splits its jobs across the worker pool using
+rendezvous hashing (HRW) rather than a fixed modulo, so adding or removing a worker
+reshuffles the minimum possible number of shard assignments instead of nearly all of
+them. Shard ownership is tracked in a Redis set with a TTL, refreshed on a heartbeat; if
+that registry is ever unreachable, every worker falls back to claiming **every** shard
+rather than none, `FOR UPDATE SKIP LOCKED` still guarantees no duplicate execution, so
+sharding is purely a contention-reduction optimization and never a correctness
+mechanism. The same pattern governs scheduler leadership: losing the lock means running
+unguarded, not stalling.
 
-- **Concurrency semaphore** - a buffered channel that limits how many jobs a single worker runs in parallel, preventing a burst of high-latency jobs from monopolizing all goroutines.
-- **Per-job timeout** - a `context.WithTimeout` wraps each job's execution. If the handler does not complete within the configured window the context is cancelled, the job is marked failed, and the retry policy is applied.
+### Event-Driven Wake-Ups and Live Updates
 
-If a job fails and attempts remain, the Executor writes a failed `job_executions` row (recording the error message and duration), increments `attempt_count` on the job row, computes the next retry delay according to the queue's back-off policy, and sets `status = 'queued'` with an updated `next_run_at`. If all attempts are exhausted, the job is moved to `dead` and a `dead_letter_queue` record is inserted in the same transaction, capturing the final error, payload, and full execution history for operator review.
+Every state-changing write (`job.enqueued`, `job.completed`, `queue.paused`, and so on)
+is published to a per-project Redis channel. Workers subscribe to nudge their own
+poller immediately instead of waiting for the next tick, cutting enqueue-to-pickup
+latency from up to `POLL_INTERVAL` down to milliseconds while keeping the ticker itself
+as a safety net for any dropped message. The API's WebSocket hub subscribes the same
+way to push the identical events straight to connected dashboard clients (see
+[Live Events](API.md#live-events-websocket)); polling remains fully functional on its
+own as the fallback path if a socket drops.
 
-#### Cron Scheduler
+### AI Failure Summaries
 
-A separate goroutine inside each worker pod wakes on a five-second tick. It scans the `jobs` table for rows where `status = 'scheduled'` and `next_run_at <= NOW()`, promotes each to `status = 'queued'`, and immediately computes the next `next_run_at` from the job's cron expression for recurring jobs. The promotion is a single `UPDATE … WHERE status = 'scheduled' AND next_run_at <= NOW()` with `FOR UPDATE SKIP LOCKED`, so multiple worker pods can run the scheduler concurrently without double-promoting the same job.
-
-#### Heartbeat
-
-Each worker emits a `worker_heartbeats` row every ten seconds containing its hostname, process ID, and a timestamp. The API reads these rows when serving the `/workers` endpoint, so the dashboard can display which workers are alive, how many jobs each is currently running, and flag any pod whose last heartbeat is stale (indicating a crash or network partition). Workers also register themselves in a `workers` table on startup and deregister on clean shutdown; the heartbeat mechanism catches ungraceful exits.
-
----
-
-### Frontend Dashboard
-
-The Next.js app on port 3000 serves five main views:
-
-| View | Purpose |
-|---|---|
-| **Jobs** | Browse, filter, and inspect individual job records; view execution logs and retry history. |
-| **Queues** | Create and configure queues; adjust concurrency, retry policy, and cron schedule. |
-| **Workers** | Live view of registered worker pods and their heartbeat timestamps. |
-| **DLQ** | Inspect dead-letter entries; requeue or discard failed jobs. |
-| **Metrics** | Throughput charts, failure rates, queue depth over time, and worker utilization. |
-| **Settings** | Manage organizations, projects, API keys, and user access. |
-
-The dashboard communicates with the Go API over authenticated REST. It does not talk to PostgreSQL or Redis directly - all reads and writes go through the API layer, which enforces auth and rate limiting uniformly for both browser and programmatic clients.
-
----
+`POST /jobs/{id}/failure-summary` sends the job's type, payload, error history, and
+recent logs to an LLM (Groq, OpenAI-compatible Chat Completions API) with a
+JSON-schema-constrained response, so the returned `category`/`confidence` values can
+never drift from what the `job_failure_summaries` table's `CHECK` constraints allow.
+Results are cached by a SHA-256 fingerprint of the rendered evidence, so unchanged
+failures never pay for a second generation, guarded by a distributed lock against
+duplicate concurrent generation and a per-project hourly quota. The feature is fully
+optional: with no `GROQ_API_KEY` configured, the endpoint returns `503` and `GET
+/features` advertises `ai_failure_summaries: false` so the dashboard hides it entirely.
 
 ### Data Storage
 
 #### PostgreSQL 16
 
-All durable state lives in PostgreSQL. The schema is managed through versioned SQL migration files in `db/migrations/`, applied in order. Key tables:
-
-| Table | Role |
-|---|---|
-| `users`, `organizations`, `projects` | Multi-tenant identity and scoping. |
-| `queues`, `retry_policies` | Queue configuration and back-off rules. |
-| `jobs` | Central job table; carries status, payload, priority, cron expression, attempt counters, and timestamps. |
-| `job_executions` | One row per execution attempt; records start/end time, outcome, and error message. |
-| `job_logs` | Structured log lines emitted by job handlers during execution. |
-| `dead_letter_queue` | Terminal failure records for operator review. |
-| `workers`, `worker_heartbeats` | Worker registration and liveness tracking. |
-| `refresh_tokens` | Persisted refresh tokens enabling server-side revocation. |
-
-Indexes on `(status, next_run_at, priority)` keep the poller query fast even under heavy load. A partial index on `status IN ('queued', 'scheduled')` avoids scanning terminal rows.
+All durable state lives here, schema-managed through versioned SQL migrations in
+`db/migrations/`, applied in order by `golang-migrate`. See the
+[Entity-Relationship Diagram](#entity-relationship-diagram) above for the complete
+table set and index rationale.
 
 #### Redis 7
 
-Redis stores only rate-limit counters - one key per IP address, with a TTL equal to the sliding window (60 seconds). No job state, no locks, no pub/sub. The entire Redis key space can be flushed without losing a single job.
+Holds only ephemeral, reconstructible state: IP rate-limit counters, the pub/sub event
+bus, distributed lock keys, the shard membership registry, and the AI-summary quota
+counter. None of it is a source of truth, the entire Redis key space can be flushed
+without losing a single job.
 
 ---
 
-## UI / Frontend Design
+## Frontend Dashboard
 
-> This section tracks dashboard UI decisions, what has been built, and what needs to be done next. Pick up here when resuming frontend work.
+The Next.js 14 App Router dashboard on port 3000 talks to the Go API exclusively over
+authenticated REST plus one WebSocket connection, it never touches Postgres or Redis
+directly, so auth and rate limiting are enforced uniformly for browser and programmatic
+clients alike.
 
----
+| View | Purpose |
+| --- | --- |
+| **Jobs** | Browse, filter, and inspect individual job records; view execution logs, retry history, and the dependency graph |
+| **Queues** | Create and configure queues: concurrency, retry policy, sharding, pause/resume |
+| **Workers** | Live view of registered worker pods and their heartbeat history |
+| **DLQ** | Inspect dead-letter entries; retry or discard them individually or in bulk |
+| **Metrics** | Throughput charts, failure rates, queue depth, and worker utilization |
 
-### Design Direction - Railway Departure Board
-
-The operator dashboard uses a **Railway Departure Board** visual world. The core thesis: queues are platforms, jobs are departures - the operator reads system health the same way a traveller reads an arrivals board. Status is the only decoration that matters; every pixel that isn't data is removed.
-
-This direction was chosen over the category default (sidebar nav + metric cards + Inter/Tailwind table) because the product is a scheduling system and the metaphor is load-bearing, not decorative.
-
-**Visual commitments (binding - do not change without a full redesign round):**
-
-| Token | Value | Role |
-|---|---|---|
-| Ground | `#0d1117` | Page background |
-| Surface | `#161b22` | Nav, elevated panels |
-| Surface-2 | `#21262d` | Hover states, sub-borders |
-| Border | `#30363d` | Dividers |
-| Text-1 | `#e6edf3` | Primary labels |
-| Text-2 | `8b949e` | Secondary / metadata |
-| Text-3 | `#484f58` | Column headers, dim values |
-| Running | `#3fb950` | Healthy state only |
-| Degraded | `#d29922` | Warning / stalled state only |
-| Critical | `#f85149` | Dead-letter / failure only - **never reassigned to another meaning** |
-| Paused | `#6e7681` | Paused/inactive |
-
-**Typography (binding):**
-- **Barlow Condensed 700** - all UI chrome: nav wordmark, breadcrumbs, column headers, status badges, button labels
-- **JetBrains Mono 400/500** - all data: counts, rates, timestamps, dead-letter numbers
-- Avoid Inter as a primary workhorse. Avoid Geist. Both are flagged in PRODUCT.md as brand anti-patterns.
-
-**Theme:** Single dark theme only. Departure boards are backlit; no light-mode toggle is planned or appropriate for this product.
+Live data arrives through `useLiveEvents`, a WebSocket hook that reconnects with
+exponential back-off and drives targeted SWR revalidation, backed visually by a small
+`LiveIndicator` pill (connected / reconnecting / polling-only) so an operator always
+knows whether they are looking at push-fresh or poll-fresh data.
 
 ---
 
-### Homepage - Operator Dashboard
-
-**Artifact (live preview):** `https://claude.ai/code/artifact/15e6279d-ca73-4103-82a4-e738150242a6`
-
-**Source file:** `/tmp/claude-1000/…/scratchpad/dashboard-homepage.html`
-(Copy this into the actual frontend when wiring up Next.js components.)
-
-**What is built:**
-
-| Section | Description |
-|---|---|
-| **Sticky nav** (52px) | Wordmark left, org → project breadcrumb (MERIDIAN LABS › PAYMENTS PIPELINE), Live dot + Workers count + New Job CTA right. `position: sticky; top: 0; z-index: 100`. |
-| **KPI strip** | 4-column grid: Active Jobs, Workers Alive, Throughput (/min), Critical (red when > 0). Large JetBrains Mono numerals, small Barlow Condensed labels. Live-updates every 2.5 s. |
-| **Needs Attention** | Conditional amber-tinted section. Shows queues with `status: wrn` or `status: crt` with a one-line diagnosis and an Inspect button. Hidden when all queues are healthy. |
-| **Departure board table** | Full-width table. Columns: Queue (name + meta), Status (badge), Running, Queued, Dead, Throughput (sparkline + rate), Last Run, Workers. Sticky thead at `top: 52px`. Warning rows carry a 1px amber left border; critical rows carry a 1px red left border. |
-| **Inline SVG sparklines** | 72×20px polyline per queue, color-matched to status. Flat dashed line when throughput is zero. |
-| **Live simulation** | `setInterval` at 2 500 ms. Running counts vary ±1 randomly; rates vary ±2; sparkline arrays shift/push. Flash animation (green tint) on count increases. |
-| **Responsive breakpoints** | ≤ 768px: KPI strip → 2-col, attention message hidden, sparkline and timestamp columns hidden. ≤ 440px: non-active breadcrumb crumbs hidden. |
-
-**Synthetic data used (Meridian Labs / Payments Pipeline):**
-
-| Queue | Status | Notes |
-|---|---|---|
-| email-dispatch | Running | High throughput (42/min baseline) |
-| fraud-detection | Running | Medium throughput |
-| invoice-generation | Degraded | Workers stalled, 23 queued |
-| payment-webhook | Critical | 2 in dead-letter, 0 workers |
-| notification-hub | Paused | 47 queued, dormant |
-| settlement-batch | Running | Cron - daily 02:00 UTC |
-| audit-export | Running | Cron - hourly |
-
----
-
-### Known Issues to Fix
-
-**1. Sticky thead renders above first data row (visual overlap)**
-
-- **Symptom:** When the page scrolls slightly, the `EMAIL-DISPATCH` queue name label appears above the `QUEUE / STATUS / …` column header row in the viewport.
-- **Root cause (investigated):** `position: sticky` on `thead th` with `top: 52px` is correct in isolation. The overlap is caused by how the artifact viewer's iframe scroll context interacts with the sticky threshold. When the tbody first row scrolls partially past the stuck thead, the top ~18 px of the row (above `top: 52px`) is visible between the nav bottom and the column header. The nav's `z-index: 100` should cover it but the background color mismatch between nav (`--g1 #161b22`) and the board area (`--g0 #0d1117`) creates a gap.
-- **Fix tried:** Changed `border-collapse: collapse` → `border-collapse: separate; border-spacing: 0` and replaced `border-bottom` on thead with `box-shadow: inset 0 -1px 0 var(--bd)`. Did not fully resolve.
-- **Recommended next approach:**
-  1. Give the nav `background: var(--g0)` (match ground color) so there's no visible seam when content scrolls behind it, OR
-  2. Add a `padding-top` shim on `.board-wrap` equal to the nav height so the board never scrolls under the nav at all, OR
-  3. Change the board to use an internal scroll container (`max-height: calc(100dvh - 52px - <kpi+attn height>); overflow-y: auto` on `.board-wrap`) so the sticky thead is relative to that container and never competes with the page scroll. This is the cleanest long-term solution for a dashboard with many queues.
-
-**2. Responsive mobile view not fully verified**
-
-- The `≤ 768px` breakpoints are defined in CSS but the mobile screenshot could not be captured in the review session (browser resize to 390 px width didn't apply to the artifact iframe).
-- Before shipping, test at 390 px (iPhone 14 Pro) and 768 px (iPad) and verify: KPI shows 2-col, attention rows readable, board scrolls horizontally without body overflow.
-
-**3. Live simulation rate drift**
-
-- The random walk on `rate` (±2 per tick, unclamped above) can drift rates far from baseline over a long session. Add a mean-reversion clamp: `q.rate = Math.max(0, Math.min(q.rate + rd, q.baseRate * 1.5))` where `baseRate` is the initial value.
-
----
-
-### Next Steps for UI Work
-
-When resuming, pick up in this order:
-
-1. **Fix the sticky thead issue** - try the internal scroll container approach on `.board-wrap` (option 3 above). Test by scrolling the board with many queues.
-2. **Wire to real API** - replace the `const Q = [...]` array and the `tick()` simulation with `fetch('/api/queues?project_id=…')` polling (or SSE stream). The DOM structure is already keyed by queue ID (`id="row-${q.id}"`, `id="run-${q.id}"`, etc.) so partial updates are straightforward.
-3. **Inspect drawer** - clicking a queue row or the Inspect button should open a right-side drawer showing job list, execution log, retry history for that queue. This is the main navigation the board needs.
-4. **New Job modal** - the `+ NEW JOB` button in the nav should open a modal: queue selector, payload textarea, priority slider, optional scheduled time.
-5. **Empty state** - when no queues exist yet, show an onboarding callout inside the board area prompting the user to create their first queue.
-6. **DESIGN.md** - write the canonical design system file from the built artifact so all future surfaces can inherit the token system and type rules. Run `/impeccable document` once the sticky issue is fixed and the artifact is clean.
-
----
-
-### Operational Wiring
-
-The full stack is defined in `docker-compose.yml`. Each service declares a `healthcheck` so dependent services wait for real readiness rather than just TCP connectivity - the API waits for PostgreSQL to accept queries, and workers wait for the API before registering. All services are configured with restart policies so a crashed pod comes back automatically in development and staging environments.
-
-Migrations run as a one-shot init container before the API starts, ensuring the schema is always up to date before any handler touches the database.
+Design decisions and the trade-offs behind them: **[Tradeoffs.md](Tradeoffs.md)**.
 
 
-
-
-
-
-
-Upcoming Main UI work -
-Don't use a single template. The approach that gets you full marks is a layered strategy: one repo for the shell, one library for the data visualization, and one source for component-level polish. Here's the exact combination:
-
-Layer 1 - Shell & Structure
-Kiranism/next-shadcn-dashboard-starter
-
-github.com/Kiranism/next-shadcn-dashboard-starter
-
-This is a free, open source (MIT) admin dashboard starter built with Next.js 16, shadcn/ui, Tailwind CSS v4, and TypeScript. It has 5,500+ GitHub stars, which signals legitimacy to any interviewer who checks. 
-GitHub
-Starterindex
-
-Why this one over every other template: most dashboard templates are static demo boilerplates - screens that look finished but need rebuilding the moment you wire in real data. This starter takes the opposite approach. Tables run end-to-end against a real data layer. Forms validate and mutate with cache invalidation. Auth, organizations, and billing function end-to-end. 
-Shadcn Dashboard
-
-What you get out of the box that maps directly to your assignment requirements:
-
-Pre-built admin dashboard layout (sidebar, header, content area), analytics overview page with charts and cards, data tables with React Query prefetch, client-side cache, search, filter and pagination, and an RBAC navigation system - fully client-side navigation filtering based on organization, permissions, and roles. 
-GitHub
-Kanban board (drag-and-drop task management built with dnd-kit), Command+K interface via kbar, feature-based code organization, ESLint + Prettier with Husky pre-commit hooks. 
-Publicrepo
-AI chat integration, notifications center, and a theme system with selector and mode toggle. 
-GitHub
-
-What to remap to your scheduler domain: the "Products" table → Jobs table. The "Users" table → Workers table. The Kanban board → Queue management. The analytics overview → Throughput/metrics dashboard. The RBAC system → Project-level access control. You're not rebuilding - you're renaming and rewiring.
-
-Layer 2 - Data Visualization
-tremorlabs/tremor
-
-github.com/tremorlabs/tremor · tremor.so
-
-This is the missing piece every other dashboard template lacks for a monitoring use case. Tremor offers 35+ fully open-source, accessible components for dashboards and charts, built with React, Tailwind CSS and Radix UI. It includes Tracker, Bar Lists, and many more components to visualize complex use cases gracefully, plus micro visualizations to highlight even the smallest details better. 
-Tremor
-
-Charts are hard, so Tremor already pushed the pixels so you can focus on data. It includes modular lists and tables that go along with badges, icons, or visualization elements, and powerful filter components for better interaction with your data. 
-Tremor NPM
-
-For your scheduler specifically, the Tremor components that will make your UI look like a real SaaS product are:
-
-AreaChart → job throughput over time (jobs/minute)
-DonutChart → job status breakdown (queued / running / completed / failed)
-Tracker → worker heartbeat timeline - this is the one that makes it look like a real monitoring tool
-BarList → queue priority visualization
-KPI Cards with sparklines → total jobs today, success rate, avg execution time, active workers
-
-Tremor + shadcn/ui don't conflict. Tremor handles the data visualization; shadcn handles everything structural (tables, dialogs, badges, dropdowns). They live in the same Tailwind project with no friction.
-
-Layer 3 - Polish & Animation
-magicui.design + ui.aceternity.com
-
-Use these selectively for 3–5 components that make the UI feel alive without being gimmicky:
-
-From Magic UI (magicui.design):
-
-AnimatedNumber - for the job count KPI cards, numbers animate up on load. One line of code, huge visual impact.
-Shimmer Button - for the "Run Job Now" CTA.
-Sparkles - for success state animations.
-
-From Aceternity UI (ui.aceternity.com):
-
-Moving Border - for the active worker cards to show they're alive.
-Background Beams - for the login/auth page only (not the dashboard itself - overuse kills the effect).
-
-Keep these to the landing/auth page and 2–3 dashboard elements max. Overuse signals junior thinking. Surgical use signals taste.
-
-Exact Pages to Build and What They Map To
-Assignment Requirement	Dashboard Page	Key Components
-Queue management	/queues	shadcn Table + Tremor DonutChart + pause/resume toggles
-Job explorer	/jobs	TanStack Table (already in Kiranism) + status badges + filters
-Worker monitor	/workers	Tremor Tracker for heartbeat + status cards
-Execution logs	/jobs/[id]/logs	shadcn ScrollArea + code-style log viewer
-Metrics / throughput	/metrics	Tremor AreaChart + BarList + KPI cards
-Queue config	/queues/[id]/settings	React Hook Form + Zod (already in Kiranism)
-DLQ / retry	/dlq	shadcn Table + retry action buttons
-Auth / projects	/login, /projects	Already built in the Kiranism starter
-The Setup Order
-bash
-# 1. Clone the base
-git clone https://github.com/Kiranism/next-shadcn-dashboard-starter.git
-cd next-shadcn-dashboard-starter
-
-# 2. Install Tremor
-npx shadcn@latest add "https://tremor.so/ui/area-chart"
-npx shadcn@latest add "https://tremor.so/ui/donut-chart"
-npx shadcn@latest add "https://tremor.so/ui/tracker"
-npx shadcn@latest add "https://tremor.so/ui/bar-list"
-npx shadcn@latest add "https://tremor.so/ui/kpi-card"
-
-# 3. Add Magic UI selectively
-npx shadcn@latest add "https://magicui.design/r/animated-number"
-npx shadcn@latest add "https://magicui.design/r/shimmer-button"
-
-Everything installs into your components/ directory as source code you own - no black-box npm dependencies, which means no version conflicts and full customizability.
