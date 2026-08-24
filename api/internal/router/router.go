@@ -32,7 +32,7 @@ func New(d Deps) http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.CORS(cfg.CORSOrigins))
 
-	summarizer := ai.New(cfg.AnthropicAPIKey, cfg.AISummaryModel)
+	summarizer := ai.New(cfg.GroqAPIKey, cfg.AISummaryModel)
 	guard := authz.New(d.Pool)
 
 	viewer := guard.Require(authz.RoleViewer)

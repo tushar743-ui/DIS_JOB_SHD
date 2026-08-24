@@ -48,6 +48,7 @@
   --state-retrying: hsl(25 95% 53%);
   --state-cancelled: hsl(220 9% 46%);
   --state-dlq: hsl(0 72% 51%);
+  --state-blocked: hsl(199 89% 48%);
 
   --status-queued: hsl(38 92% 50%);
   --status-running: hsl(217 91% 60%);
@@ -147,6 +148,7 @@
   --color-state-retrying: var(--state-retrying);
   --color-state-cancelled: var(--state-cancelled);
   --color-state-dlq: var(--state-dlq);
+  --color-state-blocked: var(--state-blocked);
 
   --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
   --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;

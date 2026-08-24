@@ -1,12 +1,13 @@
 .env
 .env.local
 .env.*.local
+.env.example
 
 claude.md
 .claude/
 .impeccable/
 skills-lock.json
-
+/home/tushar/Desktop/Dev/dis-job-sd/claude.md
 bin/
 vendor/
 *.test

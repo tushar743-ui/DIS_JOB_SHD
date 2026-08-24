@@ -24,16 +24,16 @@ export function AuthShell({
         )}
       />
 
-      <div className="relative w-full max-w-[400px]">
-        <div className="relative overflow-hidden rounded-xl border border-border bg-card p-8 shadow-xl">
+      <div className="relative w-full max-w-[480px]">
+        <div className="relative overflow-hidden rounded-xl border border-border bg-card p-10 shadow-xl">
           <BorderBeam size={220} duration={10} colorFrom="var(--primary)" colorTo="transparent" />
 
-          <div className="mb-6 text-center">
-            <span className="mx-auto mb-4 grid size-10 place-items-center rounded-lg bg-primary font-mono text-sm font-bold text-primary-foreground">
+          <div className="mb-8 text-center">
+            <span className="mx-auto mb-5 grid size-12 place-items-center rounded-lg bg-primary font-mono text-base font-bold text-primary-foreground">
               JF
             </span>
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">{subtitle}</p>
           </div>
 
           {children}

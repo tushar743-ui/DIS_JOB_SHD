@@ -49,6 +49,7 @@ function handleEvent(evt: LiveEvent) {
         mutate(["job", evt.job_id]);
         revalidatePrefix("job-execs", (k) => k[1] === evt.job_id);
         revalidatePrefix("job-logs", (k) => k[1] === evt.job_id);
+        revalidatePrefix("job-deps", (k) => k[1] === evt.job_id);
       }
       if (evt.type === "job.dead_lettered") revalidatePrefix("all-dlq");
       return;

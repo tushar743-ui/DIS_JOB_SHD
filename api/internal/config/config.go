@@ -18,7 +18,7 @@ type Config struct {
 	CORSOrigins      []string
 	RateLimit        int
 	RateLimitWindow  time.Duration
-	AnthropicAPIKey  string
+	GroqAPIKey       string
 	AISummaryModel   string
 }
 
@@ -34,13 +34,13 @@ func Load() *Config {
 		CORSOrigins:     parseList(getEnv("CORS_ORIGINS", "*")),
 		RateLimit:       parseInt(getEnv("RATE_LIMIT", "200"), 200),
 		RateLimitWindow: parseDuration(getEnv("RATE_LIMIT_WINDOW", "1m")),
-		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		AISummaryModel:  getEnv("AI_SUMMARY_MODEL", "claude-opus-5"),
+		GroqAPIKey:      os.Getenv("GROQ_API_KEY"),
+		AISummaryModel:  getEnv("AI_SUMMARY_MODEL", "openai/gpt-oss-20b"),
 	}
 }
 
 func (c *Config) AISummariesEnabled() bool {
-	return strings.TrimSpace(c.AnthropicAPIKey) != ""
+	return strings.TrimSpace(c.GroqAPIKey) != ""
 }
 
 func getEnv(key, fallback string) string {

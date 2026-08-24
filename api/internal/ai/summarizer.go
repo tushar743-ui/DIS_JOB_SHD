@@ -1,21 +1,22 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
-
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 const (
-	DefaultModel   = "claude-opus-5"
+	DefaultModel   = "openai/gpt-oss-20b"
+	apiURL         = "https://api.groq.com/openai/v1/chat/completions"
 	requestTimeout = 45 * time.Second
 	maxErrorChars  = 4000
 	maxPayloadCars = 1500
@@ -106,7 +107,9 @@ func schema() map[string]any {
 }
 
 type Summarizer struct {
-	client  anthropic.Client
+	http    *http.Client
+	baseURL string
+	apiKey  string
 	model   string
 	enabled bool
 }
@@ -119,7 +122,9 @@ func New(apiKey, model string) *Summarizer {
 		model = DefaultModel
 	}
 	return &Summarizer{
-		client:  anthropic.NewClient(option.WithAPIKey(apiKey)),
+		http:    &http.Client{Timeout: requestTimeout},
+		baseURL: apiURL,
+		apiKey:  apiKey,
 		model:   model,
 		enabled: true,
 	}
@@ -134,6 +139,43 @@ func (s *Summarizer) Model() string {
 	return s.model
 }
 
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type chatRequest struct {
+	Model          string        `json:"model"`
+	Messages       []chatMessage `json:"messages"`
+	ResponseFormat struct {
+		Type       string `json:"type"`
+		JSONSchema struct {
+			Name   string         `json:"name"`
+			Strict bool           `json:"strict"`
+			Schema map[string]any `json:"schema"`
+		} `json:"json_schema"`
+	} `json:"response_format"`
+}
+
+type chatResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
+}
+
+type apiErrorBody struct {
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 func (s *Summarizer) Summarize(ctx context.Context, fc FailureContext) (*Summary, error) {
 	if !s.Enabled() {
 		return nil, ErrDisabled
@@ -142,41 +184,62 @@ func (s *Summarizer) Summarize(ctx context.Context, fc FailureContext) (*Summary
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
-	resp, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(s.model),
-		MaxTokens: 1024,
-		System: []anthropic.TextBlockParam{{
-			Text:         systemPrompt,
-			CacheControl: anthropic.NewCacheControlEphemeralParam(),
-		}},
-		OutputConfig: anthropic.OutputConfigParam{
-			Effort: anthropic.OutputConfigEffortLow,
-			Format: anthropic.JSONOutputFormatParam{Schema: schema()},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(fc.Render())),
-		},
-	})
+	var reqBody chatRequest
+	reqBody.Model = s.model
+	reqBody.Messages = []chatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: fc.Render()},
+	}
+	reqBody.ResponseFormat.Type = "json_schema"
+	reqBody.ResponseFormat.JSONSchema.Name = "failure_summary"
+	reqBody.ResponseFormat.JSONSchema.Strict = true
+	reqBody.ResponseFormat.JSONSchema.Schema = schema()
+
+	payload, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, classify(err)
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 
-	if resp.StopReason == anthropic.StopReasonRefusal {
-		return nil, fmt.Errorf("%w: %s", ErrRefused, resp.StopDetails.Explanation)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUpstream, err)
 	}
 
-	var text strings.Builder
-	for _, block := range resp.Content {
-		if tb, ok := block.AsAny().(anthropic.TextBlock); ok {
-			text.WriteString(tb.Text)
-		}
+	if resp.StatusCode != http.StatusOK {
+		return nil, classify(resp.StatusCode, body)
 	}
-	if text.Len() == 0 {
+
+	var chat chatResponse
+	if err := json.Unmarshal(body, &chat); err != nil {
+		return nil, fmt.Errorf("%w: response was not valid json: %v", ErrUpstream, err)
+	}
+	if len(chat.Choices) == 0 {
+		return nil, fmt.Errorf("%w: model returned no content", ErrUpstream)
+	}
+
+	choice := chat.Choices[0]
+	if choice.FinishReason == "content_filter" {
+		return nil, fmt.Errorf("%w: content filter", ErrRefused)
+	}
+	if choice.Message.Content == "" {
 		return nil, fmt.Errorf("%w: model returned no content", ErrUpstream)
 	}
 
 	var out Summary
-	if err := json.Unmarshal([]byte(text.String()), &out); err != nil {
+	if err := json.Unmarshal([]byte(choice.Message.Content), &out); err != nil {
 		return nil, fmt.Errorf("%w: response was not valid json: %v", ErrUpstream, err)
 	}
 	if out.Summary == "" || out.Category == "" || out.Confidence == "" {
@@ -184,25 +247,28 @@ func (s *Summarizer) Summarize(ctx context.Context, fc FailureContext) (*Summary
 	}
 
 	out.Model = s.model
-	out.InputTokens = int(resp.Usage.InputTokens)
-	out.OutputTokens = int(resp.Usage.OutputTokens)
+	out.InputTokens = chat.Usage.PromptTokens
+	out.OutputTokens = chat.Usage.CompletionTokens
 	return &out, nil
 }
 
-func classify(err error) error {
-	var apiErr *anthropic.Error
-	if !errors.As(err, &apiErr) {
-		return fmt.Errorf("%w: %v", ErrUpstream, err)
-	}
-	switch apiErr.StatusCode {
+func classify(status int, body []byte) error {
+	var apiErr apiErrorBody
+	json.Unmarshal(body, &apiErr)
+
+	switch status {
 	case 401, 403:
 		return fmt.Errorf("%w: credentials rejected by the model provider", ErrUpstream)
 	case 429:
 		return fmt.Errorf("%w: model provider rate limit reached, retry shortly", ErrUpstream)
-	case 529:
+	case 503:
 		return fmt.Errorf("%w: model provider is overloaded, retry shortly", ErrUpstream)
 	default:
-		return fmt.Errorf("%w: provider returned %d (request %s)", ErrUpstream, apiErr.StatusCode, apiErr.RequestID)
+		msg := apiErr.Error.Message
+		if msg == "" {
+			msg = string(body)
+		}
+		return fmt.Errorf("%w: provider returned %d: %s", ErrUpstream, status, msg)
 	}
 }
 

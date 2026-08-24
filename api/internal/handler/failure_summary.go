@@ -73,7 +73,7 @@ func (h *FailureSummaryHandler) Generate(w http.ResponseWriter, r *http.Request)
 
 	if !h.ai.Enabled() {
 		writeError(w, http.StatusServiceUnavailable,
-			"AI failure summaries are not configured on this deployment (set ANTHROPIC_API_KEY)")
+			"AI failure summaries are not configured on this deployment (set GROQ_API_KEY)")
 		return
 	}
 

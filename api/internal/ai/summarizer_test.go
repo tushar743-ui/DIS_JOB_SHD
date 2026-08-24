@@ -10,9 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 func sampleContext() FailureContext {
@@ -43,11 +40,9 @@ func stubServer(t *testing.T, handler http.HandlerFunc) *Summarizer {
 	t.Cleanup(srv.Close)
 
 	return &Summarizer{
-		client: anthropic.NewClient(
-			option.WithAPIKey("test-key"),
-			option.WithBaseURL(srv.URL),
-			option.WithMaxRetries(0),
-		),
+		http:    srv.Client(),
+		baseURL: srv.URL,
+		apiKey:  "test-key",
 		model:   DefaultModel,
 		enabled: true,
 	}
@@ -59,11 +54,12 @@ func replyWith(t *testing.T, body Summary) http.HandlerFunc {
 		payload, _ := json.Marshal(body)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"id": "msg_1", "type": "message", "role": "assistant",
-			"model":       DefaultModel,
-			"content":     []map[string]any{{"type": "text", "text": string(payload)}},
-			"usage":       map[string]any{"input_tokens": 812, "output_tokens": 96},
-			"stop_reason": "end_turn",
+			"id":    "chatcmpl_1",
+			"model": DefaultModel,
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": string(payload)}, "finish_reason": "stop"},
+			},
+			"usage": map[string]any{"prompt_tokens": 812, "completion_tokens": 96},
 		})
 	}
 }
@@ -85,11 +81,11 @@ func TestDisabledSummarizerStillReportsAModel(t *testing.T) {
 	}
 }
 
-func TestNewDefaultsToOpus5(t *testing.T) {
-	if got := New("key", "").Model(); got != "claude-opus-5" {
-		t.Fatalf("default model = %q, want claude-opus-5", got)
+func TestNewDefaultsToGptOss20b(t *testing.T) {
+	if got := New("key", "").Model(); got != "openai/gpt-oss-20b" {
+		t.Fatalf("default model = %q, want openai/gpt-oss-20b", got)
 	}
-	if got := New("key", "claude-haiku-4-5").Model(); got != "claude-haiku-4-5" {
+	if got := New("key", "openai/gpt-oss-120b").Model(); got != "openai/gpt-oss-120b" {
 		t.Fatalf("explicit model was overridden, got %q", got)
 	}
 }
@@ -142,16 +138,22 @@ func TestSummarizeSendsSchemaConstrainedRequest(t *testing.T) {
 		t.Errorf("request model = %v, want %s", captured["model"], DefaultModel)
 	}
 
-	outputConfig, ok := captured["output_config"].(map[string]any)
+	responseFormat, ok := captured["response_format"].(map[string]any)
 	if !ok {
-		t.Fatal("request carried no output_config, the response would be unconstrained prose")
+		t.Fatal("request carried no response_format, the response would be unconstrained prose")
 	}
-	if outputConfig["effort"] != "low" {
-		t.Errorf("effort = %v, want low for a short triage call", outputConfig["effort"])
+	if responseFormat["type"] != "json_schema" {
+		t.Errorf("response_format.type = %v, want json_schema", responseFormat["type"])
 	}
-	format, ok := outputConfig["format"].(map[string]any)
-	if !ok || format["type"] != "json_schema" {
-		t.Fatalf("output_config.format = %v, want a json_schema constraint", outputConfig["format"])
+	jsonSchema, ok := responseFormat["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatal("response_format carried no json_schema block")
+	}
+	if jsonSchema["strict"] != true {
+		t.Errorf("json_schema.strict = %v, want true for guaranteed schema conformance", jsonSchema["strict"])
+	}
+	if _, ok := jsonSchema["schema"].(map[string]any); !ok {
+		t.Fatal("json_schema carried no schema definition")
 	}
 }
 
@@ -159,10 +161,11 @@ func TestSummarizeRejectsMalformedModelOutput(t *testing.T) {
 	s := stubServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"id": "msg_1", "type": "message", "role": "assistant", "model": DefaultModel,
-			"content":     []map[string]any{{"type": "text", "text": "not json at all"}},
-			"usage":       map[string]any{"input_tokens": 1, "output_tokens": 1},
-			"stop_reason": "end_turn",
+			"id": "chatcmpl_1", "model": DefaultModel,
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": "not json at all"}, "finish_reason": "stop"},
+			},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
 		})
 	})
 
@@ -184,11 +187,11 @@ func TestSummarizeSurfacesRefusals(t *testing.T) {
 	s := stubServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"id": "msg_1", "type": "message", "role": "assistant", "model": DefaultModel,
-			"content":      []map[string]any{},
-			"usage":        map[string]any{"input_tokens": 1, "output_tokens": 0},
-			"stop_reason":  "refusal",
-			"stop_details": map[string]any{"type": "refusal", "explanation": "declined"},
+			"id": "chatcmpl_1", "model": DefaultModel,
+			"choices": []map[string]any{
+				{"message": map[string]any{"role": "assistant", "content": ""}, "finish_reason": "content_filter"},
+			},
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 0},
 		})
 	})
 
@@ -204,7 +207,7 @@ func TestSummarizeClassifiesProviderErrors(t *testing.T) {
 	}{
 		{401, "credentials"},
 		{429, "rate limit"},
-		{529, "overloaded"},
+		{503, "overloaded"},
 		{400, "provider returned 400"},
 	}
 
@@ -212,7 +215,7 @@ func TestSummarizeClassifiesProviderErrors(t *testing.T) {
 		s := stubServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(tc.status)
-			w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"nope"}}`))
+			w.Write([]byte(`{"error":{"message":"nope","type":"invalid_request_error"}}`))
 		})
 
 		_, err := s.Summarize(context.Background(), sampleContext())
@@ -294,7 +297,7 @@ func TestFingerprintChangesWithEvidenceOrModel(t *testing.T) {
 		t.Error("fingerprint ignored a changed error, stale summaries would be served forever")
 	}
 
-	if base.Fingerprint("claude-haiku-4-5") == baseline {
+	if base.Fingerprint("openai/gpt-oss-120b") == baseline {
 		t.Error("fingerprint ignored the model, switching models would not regenerate summaries")
 	}
 }

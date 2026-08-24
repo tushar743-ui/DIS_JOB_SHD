@@ -90,7 +90,7 @@ export default function LoginPage() {
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
-        <ShimmerButton type="submit" disabled={isSubmitting} className="h-10 w-full text-sm">
+        <ShimmerButton type="submit" disabled={isSubmitting} className="h-11 w-full text-sm">
           {isSubmitting ? "Signing in…" : "Sign In"}
         </ShimmerButton>
       </form>

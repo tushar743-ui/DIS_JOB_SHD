@@ -9,12 +9,13 @@ import { XCircleIcon } from "@phosphor-icons/react/dist/csr/XCircle";
 import { ArrowsClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
 import { ProhibitIcon } from "@phosphor-icons/react/dist/csr/Prohibit";
 import { WarningOctagonIcon } from "@phosphor-icons/react/dist/csr/WarningOctagon";
+import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
 import { QuestionIcon } from "@phosphor-icons/react/dist/csr/Question";
 import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react/dist/lib/types";
 import { cn } from "@/lib/utils";
 
 export type JobState =
-  | "queued" | "scheduled" | "claimed" | "running"
+  | "queued" | "scheduled" | "claimed" | "running" | "blocked"
   | "completed" | "failed" | "cancelled" | "dead" | "retrying";
 
 interface StateSpec {
@@ -26,6 +27,7 @@ interface StateSpec {
 
 export const STATE_SPEC: Record<string, StateSpec> = {
   queued: { label: "Queued", token: "--state-queued", Icon: ClockIcon, weight: "fill" },
+  blocked: { label: "Blocked", token: "--state-blocked", Icon: LockIcon, weight: "fill" },
   scheduled: { label: "Scheduled", token: "--state-scheduled", Icon: CalendarDotsIcon, weight: "fill" },
   claimed: { label: "Claimed", token: "--state-running", Icon: CircleNotchIcon, weight: "bold" },
   running: { label: "Running", token: "--state-running", Icon: CircleNotchIcon, weight: "bold" },

@@ -10,6 +10,8 @@ import { useAuthStore } from "@/lib/auth-store";
 import { JobStateBadge } from "@/components/job-state-badge";
 import { LifecycleTimeline } from "@/components/jobs/lifecycle-timeline";
 import { AttemptsList } from "@/components/jobs/attempts-list";
+import { DependencyGraph } from "@/components/jobs/dependency-graph";
+import { FailureSummaryCard } from "@/components/jobs/failure-summary-card";
 import { JsonView } from "@/components/json-view";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorState, TableSkeleton } from "@/components/states";
@@ -197,6 +199,8 @@ export default function JobDetailPage() {
         <LifecycleTimeline job={job} />
       </div>
 
+      <FailureSummaryCard jobId={job.id} jobStatus={job.status} />
+
       <div className="mt-8 grid gap-8 border-t border-border pt-6 lg:grid-cols-2 lg:gap-12">
         <JsonView title="Args" value={job.payload} />
         <JsonView
@@ -211,6 +215,11 @@ export default function JobDetailPage() {
           }}
         />
       </div>
+
+      <section className="mt-8 border-t border-border pt-6">
+        <h2 className="mb-4 text-sm font-semibold tracking-tight">Dependencies</h2>
+        <DependencyGraph jobId={job.id} jobType={job.type} jobStatus={job.status} />
+      </section>
 
       <section className="mt-8 border-t border-border pt-6">
         <h2 className="mb-4 text-sm font-semibold tracking-tight">Attempts</h2>

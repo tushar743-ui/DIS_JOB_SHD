@@ -152,6 +152,7 @@ export const jobs = {
   },
   executions: (id: string) => req<JobExecution[]>(`/jobs/${id}/executions`),
   handledTypes: (projectId: string) => req<string[]>(`/projects/${projectId}/job-types`),
+  dependencies: (id: string) => req<JobDependencies>(`/jobs/${id}/dependencies`),
 };
 
 export const workers = {
@@ -180,6 +181,16 @@ export const dlq = {
   discard: (id: string) => req(`/dlq/${id}`, { method: "DELETE" }),
 };
 
+export const system = {
+  features: () => req<Features>("/features"),
+};
+
+export const failureSummary = {
+  get: (jobId: string) => req<FailureSummary>(`/jobs/${jobId}/failure-summary`),
+  generate: (jobId: string) =>
+    req<FailureSummary>(`/jobs/${jobId}/failure-summary`, { method: "POST" }),
+};
+
 export const metrics = {
   project: (projectId: string, hours = 24) =>
     req<ProjectMetrics>(`/projects/${projectId}/metrics?hours=${hours}`),
@@ -197,12 +208,12 @@ export interface Project {
   id: string; org_id: string; name: string; slug: string; created_at: string;
 }
 export type JobStatus =
-  | "queued" | "scheduled" | "claimed" | "running"
+  | "queued" | "scheduled" | "claimed" | "running" | "blocked"
   | "completed" | "failed" | "cancelled" | "dead";
 
 export interface Queue {
   id: string; project_id: string; name: string; description?: string;
-  priority: number; concurrency_limit: number; paused: boolean;
+  priority: number; concurrency_limit: number; paused: boolean; shard_count: number;
   retry_policy_id?: string; created_at: string; updated_at: string;
 }
 export interface QueueStats {
@@ -212,7 +223,7 @@ export interface QueueStats {
 }
 export interface CreateQueueInput {
   name: string; description?: string; priority?: number;
-  concurrency_limit?: number; retry_policy_id?: string;
+  concurrency_limit?: number; retry_policy_id?: string; shard_count?: number;
 }
 export interface Job {
   id: string; queue_id: string; type: string; payload: unknown;
@@ -220,16 +231,52 @@ export interface Job {
   attempt_count: number; scheduled_at?: string; run_at: string;
   timeout_secs: number; cron_expression?: string; batch_id?: string;
   idempotency_key?: string; tags: string[]; last_error?: string;
+  shard: number; partition_key?: string;
   created_at: string; updated_at: string; completed_at?: string;
 }
 export interface CreateJobInput {
   type: string; payload?: unknown; priority?: number;
   max_attempts?: number; scheduled_at?: string; timeout_secs?: number;
   cron_expression?: string; idempotency_key?: string; tags?: string[];
+  partition_key?: string;
 }
 export interface JobLog {
   id: number; level: string; message: string;
   metadata: unknown; logged_at: string;
+}
+export interface DependencyEdge {
+  job_id: string; type: string; status: string;
+}
+export interface JobDependencies {
+  job_id: string;
+  depends_on: DependencyEdge[];
+  dependents: DependencyEdge[];
+  blocked_by: string[];
+  satisfied: boolean;
+}
+export interface Features {
+  ai_failure_summaries: boolean;
+  ai_summary_model: string;
+  live_events: boolean;
+  workflow_dependencies: boolean;
+  queue_sharding: boolean;
+  rbac_roles: string[];
+}
+export type SummaryConfidence = "low" | "medium" | "high";
+export interface FailureSummary {
+  job_id: string;
+  summary: string;
+  likely_cause: string;
+  suggested_action: string;
+  category: string;
+  confidence: SummaryConfidence;
+  is_transient: boolean;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  stale: boolean;
+  created_at: string;
+  updated_at: string;
 }
 export interface JobExecution {
   id: string; worker_id?: string; attempt_number: number; status: string;

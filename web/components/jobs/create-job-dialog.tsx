@@ -27,6 +27,7 @@ const schema = z.object({
   priority: z.coerce.number().int().min(1, "Must be at least 1").max(10, "Must be 10 or less"),
   max_attempts: z.coerce.number().int().min(1, "Must be at least 1").max(25, "Must be 25 or less"),
   scheduled_at: z.string().optional(),
+  partition_key: z.string().max(200, "Keep it under 200 characters").optional(),
 });
 
 type Values = z.input<typeof schema>;
@@ -42,7 +43,7 @@ export function CreateJobDialog({
   const { data: handledTypes } = useHandledJobTypes(queues[0]?.project_id ?? null);
 
   const {
-    register, handleSubmit, reset,
+    register, handleSubmit, reset, watch,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
@@ -53,8 +54,12 @@ export function CreateJobDialog({
       priority: 5,
       max_attempts: 3,
       scheduled_at: "",
+      partition_key: "",
     },
   });
+
+  const selectedQueue = queues.find((q) => q.id === watch("queue_id"));
+  const sharded = (selectedQueue?.shard_count ?? 1) > 1;
 
   async function onSubmit(values: Values) {
     const parsed = schema.parse(values);
@@ -65,6 +70,7 @@ export function CreateJobDialog({
         priority: parsed.priority,
         max_attempts: parsed.max_attempts,
         scheduled_at: parsed.scheduled_at ? new Date(parsed.scheduled_at).toISOString() : undefined,
+        partition_key: parsed.partition_key?.trim() || undefined,
       });
       reset();
       onCreated();
@@ -86,6 +92,7 @@ export function CreateJobDialog({
             priority: 5,
             max_attempts: 3,
             scheduled_at: "",
+            partition_key: "",
           });
         }
         onOpenChange(v);
@@ -132,6 +139,22 @@ export function CreateJobDialog({
               )}
             </div>
           </div>
+
+          {sharded && (
+            <div className="space-y-1.5">
+              <Label htmlFor="j-partition">Partition key (optional)</Label>
+              <Input
+                id="j-partition" placeholder="e.g. the customer or account ID"
+                className="rounded-md" aria-invalid={Boolean(errors.partition_key)}
+                {...register("partition_key")}
+              />
+              {errors.partition_key && <p className="text-xs text-destructive">{errors.partition_key.message}</p>}
+              <p className="text-xs text-muted-foreground">
+                Jobs sharing a partition key always land on the same shard, so they run in order relative to each
+                other. This queue has {selectedQueue?.shard_count} shards — leave blank for no ordering affinity.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="j-payload">Payload (JSON)</Label>

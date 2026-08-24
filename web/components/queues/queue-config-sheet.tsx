@@ -22,6 +22,7 @@ const schema = z.object({
   description: z.string().max(200, "Keep it under 200 characters").optional(),
   concurrency_limit: z.coerce.number().int().min(1, "Must be at least 1").max(1000, "Must be 1000 or less"),
   priority: z.coerce.number().int().min(1, "Must be at least 1").max(10, "Must be 10 or less"),
+  shard_count: z.coerce.number().int().min(1, "Must be at least 1").max(64, "Must be 64 or less"),
   rate_limit_enabled: z.boolean(),
   rate_limit_per_minute: z.coerce.number().int().min(1).max(100000).optional(),
 });
@@ -50,6 +51,7 @@ export function QueueConfigSheet({
       description: queue?.description ?? "",
       concurrency_limit: queue?.concurrency_limit ?? 10,
       priority: queue?.priority ?? 5,
+      shard_count: queue?.shard_count ?? 1,
       rate_limit_enabled: false,
       rate_limit_per_minute: 600,
     },
@@ -66,6 +68,7 @@ export function QueueConfigSheet({
           description: parsed.description,
           concurrency_limit: parsed.concurrency_limit,
           priority: parsed.priority,
+          shard_count: parsed.shard_count,
         });
       } else if (projectId) {
         await queues.create(projectId, {
@@ -73,6 +76,7 @@ export function QueueConfigSheet({
           description: parsed.description,
           concurrency_limit: parsed.concurrency_limit,
           priority: parsed.priority,
+          shard_count: parsed.shard_count,
         });
       }
       reset(values);
@@ -123,6 +127,25 @@ export function QueueConfigSheet({
                 <Label htmlFor="q-prio">Priority (1–10)</Label>
                 <Input id="q-prio" type="number" min={1} max={10} {...register("priority")} className="rounded-md" aria-invalid={Boolean(errors.priority)} />
                 {errors.priority && <p className="text-xs text-destructive">{errors.priority.message}</p>}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Sharding</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="q-shards">Shard count</Label>
+                <Input
+                  id="q-shards" type="number" min={1} max={64}
+                  {...register("shard_count")} className="rounded-md"
+                  aria-invalid={Boolean(errors.shard_count)}
+                />
+                {errors.shard_count && <p className="text-xs text-destructive">{errors.shard_count.message}</p>}
+                <p className="text-xs text-muted-foreground">
+                  1 keeps sharding off — any worker may claim from this queue. Above 1 splits it into shards so
+                  multiple workers process it in parallel without contending on the same rows.
+                </p>
               </div>
             </div>
 

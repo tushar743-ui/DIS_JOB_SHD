@@ -391,7 +391,7 @@ func TestFailureSummaryRequiresAFailedJob(t *testing.T) {
 
 	switch resp.StatusCode {
 	case http.StatusServiceUnavailable:
-		t.Skip("ANTHROPIC_API_KEY not configured, summary generation is disabled")
+		t.Skip("GROQ_API_KEY not configured, summary generation is disabled")
 	case http.StatusConflict:
 	default:
 		t.Fatalf("status = %d, want 409 for a queued job (%s)", resp.StatusCode, readBody(resp))

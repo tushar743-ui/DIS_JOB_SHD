@@ -2,10 +2,10 @@
 
 import useSWR from "swr";
 import {
-  queues, jobs, workers, dlq, metrics,
+  queues, jobs, workers, dlq, metrics, system, failureSummary,
   type Queue, type Job, type Worker, type DLQEntry,
   type ProjectMetrics, type QueueMetrics, type JobLog, type JobExecution,
-  type QueueStats,
+  type QueueStats, type JobDependencies, type Features, type FailureSummary,
 } from "@/lib/api";
 
 const LIVE = { refreshInterval: 5000 };
@@ -58,6 +58,22 @@ export function useJobLogs(jobId: string | null) {
 
 export function useJobExecutions(jobId: string | null) {
   return useSWR<JobExecution[]>(jobId ? ["job-execs", jobId] : null, () => jobs.executions(jobId!), LIVE);
+}
+
+export function useJobDependencies(jobId: string | null) {
+  return useSWR<JobDependencies>(jobId ? ["job-deps", jobId] : null, () => jobs.dependencies(jobId!), LIVE);
+}
+
+export function useFeatures() {
+  return useSWR<Features>("features", () => system.features(), SLOW);
+}
+
+export function useFailureSummary(jobId: string | null) {
+  return useSWR<FailureSummary | null>(
+    jobId ? ["failure-summary", jobId] : null,
+    () => failureSummary.get(jobId!).catch(() => null),
+    SLOW
+  );
 }
 
 export function useHandledJobTypes(projectId: string | null) {
