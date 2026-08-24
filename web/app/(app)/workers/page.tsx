@@ -40,24 +40,28 @@ export default function WorkerMonitorPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <Badge variant="outline" className="rounded-full">{active.length} live</Badge>
-        <Badge variant="outline" className="rounded-full">{workerList.length - active.length} stale</Badge>
-        <span className="ml-auto">polling every 5s</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="t-chip rounded-full px-2.5 py-1">
+          <span className="font-mono tabular-nums">{active.length}</span> live
+        </Badge>
+        <Badge variant="outline" className="t-chip rounded-full px-2.5 py-1">
+          <span className="font-mono tabular-nums">{workerList.length - active.length}</span> stale
+        </Badge>
+        <span className="t-meta ml-auto text-muted-foreground">polling every 5s</span>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-border bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
-                <th className="h-9 px-3 text-left font-medium">Worker</th>
-                <th className="h-9 px-3 text-left font-medium">Status</th>
-                <th className="h-9 px-3 text-left font-medium">Current Jobs</th>
-                <th className="h-9 px-3 text-left font-medium">PID</th>
-                <th className="h-9 px-3 text-left font-medium">Last Heartbeat</th>
-                <th className="h-9 px-3 text-left font-medium">Registered</th>
-                <th className="h-9 w-10 px-3" />
+              <tr className="t-label border-b border-border bg-muted/60 text-muted-foreground">
+                <th className="h-11 px-4 text-left">Worker</th>
+                <th className="h-11 px-4 text-left">Status</th>
+                <th className="h-11 px-4 text-left">Current Jobs</th>
+                <th className="h-11 px-4 text-left">PID</th>
+                <th className="h-11 px-4 text-left">Last Heartbeat</th>
+                <th className="h-11 px-4 text-left">Registered</th>
+                <th className="h-11 w-12 px-4" />
               </tr>
             </thead>
             <tbody>
@@ -75,53 +79,61 @@ export default function WorkerMonitorPage() {
                     transition={{ duration: 0.15, delay: Math.min(i, 10) * 0.02 }}
                     onClick={() => router.push(`/workers/${w.id}`)}
                     className={cn(
-                      "h-12 cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-accent/40",
+                      "h-14 cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-accent/40",
                       stale && "opacity-60"
                     )}
                   >
-                    <td className="px-3">
-                      <span className={cn("font-mono text-xs", stale && "line-through")}>{w.hostname}</span>
-                      <span className="ml-2 font-mono text-[10px] text-muted-foreground">{w.id.slice(0, 8)}</span>
+                    <td className="px-4">
+                      <div className="flex items-baseline gap-2.5">
+                        <span className={cn("t-body font-semibold", stale && "line-through decoration-1")}>{w.hostname}</span>
+                        <span className="t-data text-[0.75rem] font-normal text-muted-foreground">{w.id.slice(0, 8)}</span>
+                      </div>
                     </td>
-                    <td className="px-3">
+                    <td className="px-4">
                       <span
                         role="status"
                         aria-live="polite"
-                        className="inline-flex items-center gap-1.5 text-xs"
+                        className="t-chip inline-flex items-center gap-2"
                         style={{ color: `var(${token})` }}
                       >
-                        <span className="relative flex size-1.5">
+                        <span className="relative flex size-2">
                           {!stale && mine > 0 && (
                             <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-75" />
                           )}
-                          <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+                          <span className="relative inline-flex size-2 rounded-full bg-current" />
                         </span>
                         {label}
                       </span>
                     </td>
-                    <td className="px-3 font-mono text-xs tabular-nums">
-                      {stale ? "-" : `${Math.min(mine, w.concurrency)} / ${w.concurrency}`}
+                    <td className="t-data px-4">
+                      {stale ? <span className="text-muted-foreground">-</span> : (
+                        <>
+                          <span className="font-semibold text-foreground">{Math.min(mine, w.concurrency)}</span>
+                          <span className="mx-1 text-muted-foreground">/</span>
+                          <span className="text-muted-foreground">{w.concurrency}</span>
+                        </>
+                      )}
                     </td>
-                    <td className="px-3 font-mono text-xs text-muted-foreground">{w.pid}</td>
-                    <td className="px-3 text-xs">
+                    <td className="t-data px-4 font-normal text-muted-foreground">{w.pid}</td>
+                    <td className="t-meta px-4">
                       <Tooltip>
                         <TooltipTrigger
-                          render={<span className={stale ? "text-destructive" : "text-state-completed"}>{fmtRelative(w.last_heartbeat_at)}</span>}
+                          render={<span className={cn("font-medium", stale ? "text-destructive" : "text-state-completed")}>{fmtRelative(w.last_heartbeat_at)}</span>}
                         />
-                        <TooltipContent className="font-mono text-xs">{fmtDate(w.last_heartbeat_at)}</TooltipContent>
+                        <TooltipContent className="t-data">{fmtDate(w.last_heartbeat_at)}</TooltipContent>
                       </Tooltip>
                     </td>
-                    <td className="px-3 text-xs text-muted-foreground">{fmtRelative(w.registered_at)}</td>
-                    <td className="px-3">
+                    <td className="t-meta px-4 text-muted-foreground">{fmtRelative(w.registered_at)}</td>
+                    <td className="px-4">
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
                             <button
                               aria-label={`Actions for worker ${w.hostname}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+                              className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
                             >
-                              <MoreVertical className="size-3.5" />
+                              <MoreVertical className="size-4" />
                             </button>
                           }
                         />

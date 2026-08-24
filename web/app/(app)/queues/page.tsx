@@ -55,8 +55,9 @@ export default function QueueManagerPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          {queueList?.length ?? 0} queue{(queueList?.length ?? 0) === 1 ? "" : "s"} in this project
+        <p className="t-meta text-muted-foreground">
+          <span className="font-mono font-medium tabular-nums text-foreground">{queueList?.length ?? 0}</span>
+          {" "}queue{(queueList?.length ?? 0) === 1 ? "" : "s"} in this project
         </p>
         <QueueConfigSheet
           queue={null}
@@ -108,18 +109,18 @@ export default function QueueManagerPage() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.2, delay: i * 0.05 }}
               >
-                <Card className="rounded-xl p-5 transition-all hover:border-primary hover:shadow-md">
+                <Card className="rounded-xl p-6 transition-colors hover:border-primary">
                   <div className="flex items-start justify-between gap-2">
                     <Link
                       href={`/queues/${q.id}`}
-                      className="min-w-0 truncate text-sm font-semibold tracking-tight hover:text-primary focus-visible:ring-2 focus-visible:ring-primary"
+                      className="t-title min-w-0 truncate hover:text-primary focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       {q.name}
                     </Link>
                     <Badge
                       variant="outline"
                       role="status"
-                      className="shrink-0 gap-1.5 rounded-full text-[10px]"
+                      className="t-label shrink-0 gap-1.5 rounded-full px-2.5 py-1"
                       style={{ borderColor: `color-mix(in oklab, var(${st.token}) 40%, transparent)`, color: `var(${st.token})` }}
                     >
                       <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
@@ -129,16 +130,21 @@ export default function QueueManagerPage() {
 
                   <Separator className="my-3" />
 
-                  <p className="text-[11px] text-muted-foreground">
-                    Concurrency: <span className="font-mono text-foreground">{q.concurrency_limit}</span>
-                    <span className="mx-2">·</span>
-                    Priority: <span className="font-mono text-foreground">{q.priority}</span>
-                  </p>
+                  <div className="flex items-baseline gap-6">
+                    <div>
+                      <p className="t-label text-muted-foreground">Concurrency</p>
+                      <p className="t-data mt-1 text-[1.125rem] font-semibold text-foreground">{q.concurrency_limit}</p>
+                    </div>
+                    <div>
+                      <p className="t-label text-muted-foreground">Priority</p>
+                      <p className="t-data mt-1 text-[1.125rem] font-semibold text-foreground">{q.priority}</p>
+                    </div>
+                  </div>
 
-                  <div className="mt-3">
-                    <div className="mb-1 flex items-center justify-between text-[11px]">
-                      <span className="text-muted-foreground">Utilization</span>
-                      <span className="font-mono tabular-nums">{util.toFixed(0)}%</span>
+                  <div className="mt-5">
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <span className="t-label text-muted-foreground">Utilization</span>
+                      <span className="t-data text-[0.9375rem] font-semibold">{util.toFixed(0)}%</span>
                     </div>
                     <Progress
                       value={util}
@@ -148,13 +154,19 @@ export default function QueueManagerPage() {
                     />
                   </div>
 
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Badge variant="outline" className="rounded-full text-[10px]">{queued} queued</Badge>
-                    <Badge variant="outline" className="rounded-full text-[10px]">{running} running</Badge>
-                    <Badge variant="outline" className="rounded-full text-[10px]">{retry} retry</Badge>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge variant="outline" className="t-chip rounded-full px-2.5 py-1">
+                      <span className="font-mono font-semibold tabular-nums">{queued}</span> queued
+                    </Badge>
+                    <Badge variant="outline" className="t-chip rounded-full px-2.5 py-1">
+                      <span className="font-mono font-semibold tabular-nums">{running}</span> running
+                    </Badge>
+                    <Badge variant="outline" className="t-chip rounded-full px-2.5 py-1">
+                      <span className="font-mono font-semibold tabular-nums">{retry}</span> retry
+                    </Badge>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-5 flex flex-wrap gap-2">
                     <ConfirmDialog
                       title={q.paused ? "Resume this queue?" : "Pause this queue?"}
                       description={
@@ -165,7 +177,7 @@ export default function QueueManagerPage() {
                       confirmLabel={q.paused ? "Resume" : "Pause"}
                       onConfirm={() => togglePause(q)}
                       trigger={
-                        <Button size="sm" variant="outline" className="rounded-lg text-xs">
+                        <Button size="sm" variant="outline" className="t-chip rounded-lg">
                           {q.paused
                             ? <><PlayCircle className="size-3.5" aria-hidden="true" /> Resume</>
                             : <><PauseCircle className="size-3.5" aria-hidden="true" /> Pause</>}
@@ -177,7 +189,7 @@ export default function QueueManagerPage() {
                       projectId={projectId}
                       onSaved={() => mutate()}
                       trigger={
-                        <Button size="sm" variant="outline" className="rounded-lg text-xs" aria-label={`Configure ${q.name}`}>
+                        <Button size="sm" variant="outline" className="t-chip rounded-lg" aria-label={`Configure ${q.name}`}>
                           <Settings2 className="size-3.5" aria-hidden="true" /> Configure
                         </Button>
                       }
@@ -188,7 +200,7 @@ export default function QueueManagerPage() {
                       confirmLabel="Delete"
                       onConfirm={() => remove(q)}
                       trigger={
-                        <Button size="sm" variant="ghost" className="rounded-lg text-xs text-muted-foreground hover:text-destructive" aria-label={`Delete queue ${q.name}`}>
+                        <Button size="sm" variant="ghost" className="t-chip rounded-lg text-muted-foreground hover:text-destructive" aria-label={`Delete queue ${q.name}`}>
                           <Trash2 className="size-3.5" aria-hidden="true" />
                         </Button>
                       }

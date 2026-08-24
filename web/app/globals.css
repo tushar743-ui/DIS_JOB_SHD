@@ -96,8 +96,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-open-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -203,6 +203,62 @@
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 9999px;
+  }
+}
+
+@layer components {
+  .t-metric {
+    font-size: 2.75rem;
+    line-height: 0.95;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+  }
+
+  .t-title {
+    font-size: 1.0625rem;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.018em;
+  }
+
+  .t-body {
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    letter-spacing: -0.006em;
+  }
+
+  .t-data {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "zero" 1;
+  }
+
+  .t-meta {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    letter-spacing: -0.002em;
+  }
+
+  .t-label {
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: 0.085em;
+    text-transform: uppercase;
+  }
+
+  .t-chip {
+    font-size: 0.75rem;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: -0.004em;
+    font-variant-numeric: tabular-nums;
   }
 }
 
