@@ -38,7 +38,7 @@ export default function BatchJobsPage() {
     return [...map.values()].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
   }, [data]);
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (isLoading && !data) return <TableSkeleton rows={4} cols={4} />;
   if (!batches.length) {
     return (

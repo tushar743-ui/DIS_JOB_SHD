@@ -45,7 +45,7 @@ export default function ScheduledJobsPage() {
     [data]
   );
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (isLoading && !data) return <TableSkeleton rows={5} cols={6} />;
   if (!rows.length) {
     return (

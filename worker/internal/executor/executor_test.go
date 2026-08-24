@@ -157,11 +157,32 @@ func TestRegister_Overwrite(t *testing.T) {
 	}
 }
 
-func TestSemChan_RespectsCapacity(t *testing.T) {
+func TestFreeSlots_TracksSemaphoreOccupancy(t *testing.T) {
 	concurrency := 3
 	e := &Executor{sem: make(chan struct{}, concurrency)}
-	if cap(e.SemChan()) != concurrency {
-		t.Fatalf("expected semaphore capacity=%d, got %d", concurrency, cap(e.SemChan()))
+
+	if got := e.FreeSlots(); got != concurrency {
+		t.Fatalf("idle executor reports %d free slots, want %d", got, concurrency)
+	}
+	if got := e.Running(); got != 0 {
+		t.Fatalf("idle executor reports %d running, want 0", got)
+	}
+
+	e.sem <- struct{}{}
+	e.sem <- struct{}{}
+
+	if got := e.FreeSlots(); got != concurrency-2 {
+		t.Fatalf("with 2 slots taken FreeSlots = %d, want %d", got, concurrency-2)
+	}
+	if got := e.Running(); got != 2 {
+		t.Fatalf("with 2 slots taken Running = %d, want 2", got)
+	}
+
+	<-e.sem
+	<-e.sem
+
+	if got := e.FreeSlots(); got != concurrency {
+		t.Fatalf("after release FreeSlots = %d, want %d", got, concurrency)
 	}
 }
 

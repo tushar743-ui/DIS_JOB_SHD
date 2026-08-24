@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -37,4 +39,8 @@ type paginated[T any] struct {
 	Total  int `json:"total"`
 	Limit  int `json:"limit"`
 	Offset int `json:"offset"`
+}
+
+func contextWithTimeout(r *http.Request, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(r.Context(), d)
 }

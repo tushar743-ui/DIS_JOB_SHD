@@ -50,7 +50,7 @@ export default function QueueManagerPage() {
     mutate();
   }
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
 
   return (
     <div className="space-y-4">

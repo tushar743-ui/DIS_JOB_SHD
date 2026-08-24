@@ -77,7 +77,7 @@ export default function DashboardPage() {
     ];
   }, [totals, throughput, metrics]);
 
-  if (metricsError) return <ErrorState onRetry={() => refetchMetrics()} />;
+  if (metricsError) return <ErrorState message={metricsError.message} onRetry={() => refetchMetrics()} />;
   if (!projectId)
     return (
       <EmptyState

@@ -38,7 +38,7 @@ export default function QueueDetailPage() {
     { refreshInterval: 5000 }
   );
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (!queue) return <TableSkeleton rows={5} cols={4} />;
 
   const by = stats?.by_status ?? {};

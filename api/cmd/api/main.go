@@ -13,7 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/tushar/dis-job-queue/api/internal/config"
 	"github.com/tushar/dis-job-queue/api/internal/db"
+	"github.com/tushar/dis-job-queue/api/internal/handler"
 	"github.com/tushar/dis-job-queue/api/internal/router"
+	"github.com/tushar/dis-job-queue/shared/events"
 )
 
 func main() {
@@ -35,18 +37,28 @@ func main() {
 	rdb := db.NewRedis(cfg.RedisURL)
 	defer rdb.Close()
 
-	r := router.New(cfg, pool, rdb)
+	hub := handler.NewHub(rdb)
+	defer hub.Close()
+
+	bus := events.NewPublisher(rdb, func(err error) {
+		log.Debug().Err(err).Msg("event publish failed")
+	})
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr: ":" + cfg.Port,
+		Handler: router.New(router.Deps{
+			Config: cfg, Pool: pool, Redis: rdb, Hub: hub, Bus: bus,
+		}),
+		ReadHeaderTimeout: 15 * time.Second,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
-		log.Info().Str("port", cfg.Port).Msg("API server starting")
+		log.Info().
+			Str("port", cfg.Port).
+			Bool("ai_summaries", cfg.AISummariesEnabled()).
+			Msg("API server starting")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("server error")
 		}
@@ -57,10 +69,12 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down server...")
+	hub.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal().Err(err).Msg("server forced shutdown")
+		log.Error().Err(err).Msg("server forced shutdown")
 	}
 	log.Info().Msg("server stopped")
 }

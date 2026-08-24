@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+	"github.com/tushar/dis-job-queue/shared/events"
 	"github.com/tushar/dis-job-queue/worker/internal/config"
 )
 
@@ -39,6 +40,7 @@ type Handler func(ctx context.Context, job *Job) error
 type Executor struct {
 	db       *pgxpool.Pool
 	rdb      *redis.Client
+	bus      *events.Publisher
 	workerID string
 	cfg      *config.Config
 	handlers map[string]Handler
@@ -47,10 +49,11 @@ type Executor struct {
 	mu       sync.Mutex
 }
 
-func New(db *pgxpool.Pool, rdb *redis.Client, workerID string, cfg *config.Config) *Executor {
+func New(db *pgxpool.Pool, rdb *redis.Client, bus *events.Publisher, workerID string, cfg *config.Config) *Executor {
 	return &Executor{
 		db:       db,
 		rdb:      rdb,
+		bus:      bus,
 		workerID: workerID,
 		cfg:      cfg,
 		handlers: map[string]Handler{},
@@ -87,7 +90,20 @@ func (e *Executor) Submit(job *Job) {
 	}()
 }
 
-func (e *Executor) SemChan() chan struct{} { return e.sem }
+func (e *Executor) FreeSlots() int { return cap(e.sem) - len(e.sem) }
+
+func (e *Executor) Running() int { return len(e.sem) }
+
+func (e *Executor) publish(ctx context.Context, kind events.Type, job *Job, status, errMsg string) {
+	if e.bus == nil {
+		return
+	}
+	e.bus.Publish(ctx, events.Event{
+		Type: kind, ProjectID: e.cfg.ProjectID, QueueID: job.QueueID,
+		JobID: job.ID, JobType: job.Type, WorkerID: e.workerID,
+		Status: status, Attempt: job.AttemptCount + 1, Error: errMsg,
+	})
+}
 
 func (e *Executor) Drain(ctx context.Context) {
 	done := make(chan struct{})
@@ -113,6 +129,8 @@ func (e *Executor) run(job *Job) {
 		e.releaseClaim(job, err)
 		return
 	}
+
+	e.publish(ctx, events.JobStarted, job, "running", "")
 
 	start := time.Now()
 	var execErr error
@@ -201,7 +219,45 @@ func (e *Executor) handleSuccess(ctx context.Context, job *Job, execID string, d
 	}
 
 	e.writeLog(context.Background(), job.ID, execID, "info", "job completed", nil)
+	e.publish(ctx, events.JobCompleted, job, "completed", "")
+	e.unblockDependents(ctx, job.ID)
 	log.Info().Str("job_id", job.ID).Str("type", job.Type).Int("duration_ms", durationMs).Msg("job completed")
+}
+
+func (e *Executor) unblockDependents(ctx context.Context, jobID string) {
+	rows, err := e.db.Query(ctx,
+		`UPDATE jobs SET status='queued', run_at=now(), updated_at=now()
+		 WHERE id IN (
+		   SELECT j.id FROM jobs j
+		   WHERE j.status='blocked'
+		     AND j.id IN (SELECT job_id FROM job_dependencies WHERE depends_on_job_id = $1)
+		     AND NOT EXISTS (
+		       SELECT 1 FROM job_dependencies d
+		       JOIN jobs parent ON parent.id = d.depends_on_job_id
+		       WHERE d.job_id = j.id AND parent.status <> 'completed'
+		     )
+		   FOR UPDATE SKIP LOCKED
+		 )
+		 RETURNING id, queue_id, type`, jobID)
+	if err != nil {
+		log.Error().Err(err).Str("job_id", jobID).Msg("failed to unblock dependents")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, queueID, jobType string
+		if err := rows.Scan(&id, &queueID, &jobType); err != nil {
+			continue
+		}
+		if e.bus != nil {
+			e.bus.Publish(ctx, events.Event{
+				Type: events.JobUnblocked, ProjectID: e.cfg.ProjectID,
+				QueueID: queueID, JobID: id, JobType: jobType, Status: "queued",
+			})
+		}
+		log.Debug().Str("job_id", id).Str("after", jobID).Msg("dependency satisfied, job unblocked")
+	}
 }
 
 func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, execErr error, durationMs int) {
@@ -225,6 +281,7 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 			   resolved_at = NULL,
 			   resolved_by = NULL`,
 			job.ID, job.QueueID, errMsg, nextAttempt)
+		e.publish(ctx, events.JobDeadLettered, job, "dead", errMsg)
 		log.Warn().Str("job_id", job.ID).Str("error", errMsg).Msg("job moved to DLQ")
 	} else {
 		delay := e.calcDelay(job, nextAttempt)
@@ -232,6 +289,7 @@ func (e *Executor) handleFailure(ctx context.Context, job *Job, execID string, e
 		e.db.Exec(ctx,
 			`UPDATE jobs SET status='queued', last_error=$1, run_at=$2, updated_at=now(), claimed_by=NULL WHERE id=$3`,
 			errMsg, runAt, job.ID)
+		e.publish(ctx, events.JobFailed, job, "queued", errMsg)
 		log.Warn().Str("job_id", job.ID).Err(execErr).
 			Dur("retry_delay", delay).Int("attempt", nextAttempt).Msg("job failed, will retry")
 	}

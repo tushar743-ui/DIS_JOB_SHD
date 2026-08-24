@@ -16,14 +16,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tushar/dis-job-queue/api/internal/config"
 	"github.com/tushar/dis-job-queue/api/internal/db"
+	"github.com/tushar/dis-job-queue/api/internal/handler"
 	"github.com/tushar/dis-job-queue/api/internal/router"
+	"github.com/tushar/dis-job-queue/shared/events"
 )
 
 var (
 	testServer    *httptest.Server
 	testClient    *http.Client
+	testHub       *handler.Hub
+	testBus       *events.Publisher
+	testPool      *pgxpool.Pool
 	adminToken    string
 	testOrgID     string
 	testProjectID string
@@ -47,7 +53,13 @@ func TestMain(m *testing.M) {
 	}
 	rdb := db.NewRedis(cfg.RedisURL)
 
-	testServer = httptest.NewServer(router.New(cfg, pool, rdb))
+	testHub = handler.NewHub(rdb)
+	testBus = events.NewPublisher(rdb, nil)
+	testPool = pool
+
+	testServer = httptest.NewServer(router.New(router.Deps{
+		Config: cfg, Pool: pool, Redis: rdb, Hub: testHub, Bus: testBus,
+	}))
 	testClient = testServer.Client()
 
 	adminEmail := fmt.Sprintf("admin-%s@djq-test.io", testRunID)
@@ -77,6 +89,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	mustDo("DELETE", fmt.Sprintf("/api/v1/orgs/%s", testOrgID), nil, adminToken)
+	testHub.Close()
 	testServer.Close()
 	pool.Close()
 	rdb.Close()

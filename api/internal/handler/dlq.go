@@ -9,11 +9,17 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tushar/dis-job-queue/api/internal/middleware"
+	"github.com/tushar/dis-job-queue/shared/events"
 )
 
-type DLQHandler struct{ db *pgxpool.Pool }
+type DLQHandler struct {
+	db  *pgxpool.Pool
+	bus *events.Publisher
+}
 
-func NewDLQHandler(db *pgxpool.Pool) *DLQHandler { return &DLQHandler{db: db} }
+func NewDLQHandler(db *pgxpool.Pool, bus *events.Publisher) *DLQHandler {
+	return &DLQHandler{db: db, bus: bus}
+}
 
 type dlqRow struct {
 	ID         string     `json:"id"`
@@ -55,19 +61,19 @@ func (h *DLQHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	dlqID := chi.URLParam(r, "dlqID")
 	userID := middleware.UserIDFromContext(r.Context())
 
-	var jobID, jobType, projectID string
+	var jobID, jobType, projectID, queueID string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT d.job_id, j.type, q.project_id
+		`SELECT d.job_id, j.type, q.project_id, q.id
 		 FROM dead_letter_queue d
 		 JOIN jobs j ON j.id = d.job_id
 		 JOIN queues q ON q.id = d.queue_id
 		 WHERE d.id=$1 AND d.resolved_at IS NULL`, dlqID,
-	).Scan(&jobID, &jobType, &projectID); err != nil {
+	).Scan(&jobID, &jobType, &projectID, &queueID); err != nil {
 		writeError(w, http.StatusNotFound, "DLQ entry not found or already resolved")
 		return
 	}
 
-	handled, err := h.handledTypes(r.Context(), projectID)
+	handled, err := handledTypes(r.Context(), h.db, projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
 		return
@@ -78,24 +84,42 @@ func (h *DLQHandler) Retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, _ := h.db.Begin(r.Context())
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
 	defer tx.Rollback(r.Context())
 
-	tx.Exec(r.Context(),
-		`UPDATE jobs SET status='queued', attempt_count=0, last_error=NULL, run_at=now(), updated_at=now()
-		 WHERE id=$1`, jobID)
-	tx.Exec(r.Context(),
-		`UPDATE dead_letter_queue SET resolved_at=now(), resolved_by=$1 WHERE id=$2`, userID, dlqID)
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE jobs SET status='queued', attempt_count=0, last_error=NULL, completed_at=NULL,
+		   claimed_by=NULL, claimed_at=NULL, run_at=now(), updated_at=now()
+		 WHERE id=$1`, jobID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to requeue job")
+		return
+	}
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE dead_letter_queue SET resolved_at=now(), resolved_by=$1 WHERE id=$2`, userID, dlqID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve dead-letter entry")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
 
-	tx.Commit(r.Context())
+	h.bus.Publish(r.Context(), events.Event{
+		Type: events.JobEnqueued, ProjectID: projectID,
+		QueueID: queueID, JobID: jobID, JobType: jobType, Status: "queued",
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "job re-queued", "job_id": jobID})
 }
 
 const liveWorkerWindow = "2 minutes"
 
-func (h *DLQHandler) handledTypes(ctx context.Context, projectID string) ([]string, error) {
+func handledTypes(ctx context.Context, db *pgxpool.Pool, projectID string) ([]string, error) {
 	var types []string
-	err := h.db.QueryRow(ctx,
+	err := db.QueryRow(ctx,
 		`SELECT COALESCE(array_agg(DISTINCT t), '{}')
 		 FROM workers w, unnest(w.handled_types) AS t
 		 WHERE w.project_id=$1 AND w.status='active'
@@ -108,7 +132,7 @@ func (h *DLQHandler) RetryAll(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	userID := middleware.UserIDFromContext(r.Context())
 
-	handled, err := h.handledTypes(r.Context(), projectID)
+	handled, err := handledTypes(r.Context(), h.db, projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
 		return
@@ -146,6 +170,12 @@ func (h *DLQHandler) RetryAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if requeued > 0 {
+		h.bus.Publish(r.Context(), events.Event{
+			Type: events.JobEnqueued, ProjectID: projectID, Status: "queued",
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"requeued":          requeued,
 		"skipped_unhandled": skipped,
@@ -156,7 +186,7 @@ func (h *DLQHandler) DiscardUnhandled(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	userID := middleware.UserIDFromContext(r.Context())
 
-	handled, err := h.handledTypes(r.Context(), projectID)
+	handled, err := handledTypes(r.Context(), h.db, projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read worker capabilities: "+err.Error())
 		return

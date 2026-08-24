@@ -12,6 +12,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/tushar/dis-job-queue/shared/events"
 	"github.com/tushar/dis-job-queue/worker/internal/config"
 	workerdb "github.com/tushar/dis-job-queue/worker/internal/db"
 	"github.com/tushar/dis-job-queue/worker/internal/executor"
@@ -19,10 +20,9 @@ import (
 	"github.com/tushar/dis-job-queue/worker/internal/poller"
 )
 
-
 func simulateWork(name string) executor.Handler {
 	return func(ctx context.Context, job *executor.Job) error {
-		delay := time.Duration(50+rand.Intn(200)) * time.Millisecond
+		delay := 10*time.Second + time.Duration(rand.Intn(5000))*time.Millisecond
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
@@ -38,6 +38,15 @@ func simulateFail(name string) executor.Handler {
 	return func(ctx context.Context, job *executor.Job) error {
 		return fmt.Errorf("simulated failure in handler %q", name)
 	}
+}
+
+var jobTypes = []string{
+	"process_order", "sync_inventory", "generate_report", "cleanup_temp_files",
+	"send_email", "send_bulk_email", "push_notification", "send_sms",
+	"etl_batch", "transcode_video", "process_payment", "fraud_check",
+	"compliance_alert", "compliance_report", "heartbeat_check", "delayed_task",
+	"batch_op", "batch_process", "idem_job", "cancel_target", "prio_test", "scheduled_cleanup",
+	"extract", "transform", "load", "notify", "workflow_step",
 }
 
 func main() {
@@ -68,41 +77,40 @@ func main() {
 	}
 	log.Info().Str("worker_id", workerID).Msg("worker registered")
 
-	exec := executor.New(pool, rdb, workerID, cfg)
+	bus := events.NewPublisher(rdb, func(err error) {
+		log.Debug().Err(err).Msg("event publish failed")
+	})
 
-	
-	jobTypes := []string{
-		"process_order", "sync_inventory", "generate_report", "cleanup_temp_files",
-		"send_email", "send_bulk_email", "push_notification", "send_sms",
-		"etl_batch", "transcode_video", "process_payment", "fraud_check",
-		"compliance_alert", "compliance_report", "heartbeat_check", "delayed_task",
-		"batch_op", "batch_process", "idem_job", "cancel_target", "prio_test", "scheduled_cleanup",
-	}
+	exec := executor.New(pool, rdb, bus, workerID, cfg)
 	for _, jt := range jobTypes {
 		exec.Register(jt, simulateWork(jt))
 	}
-	
 	exec.Register("always_fail", simulateFail("always_fail"))
 
 	if err := workerdb.SetHandledTypes(ctx, pool, workerID, exec.RegisteredTypes()); err != nil {
 		log.Warn().Err(err).Msg("failed to publish handled job types")
 	}
 
-	poll := poller.New(pool, rdb, exec, workerID, cfg)
-	hb := heartbeat.New(pool, workerID)
+	poll := poller.New(pool, rdb, exec, bus, workerID, cfg)
+	hb := heartbeat.New(pool, rdb, bus, workerID, cfg)
+
+	bus.Publish(ctx, events.Event{
+		Type: events.WorkerOnline, ProjectID: cfg.ProjectID, WorkerID: workerID,
+	})
 
 	go hb.Run(ctx)
 	go poll.RunScheduler(ctx)
+	go poll.Run(ctx)
 
 	log.Info().
 		Str("worker_id", workerID).
 		Int("concurrency", cfg.Concurrency).
 		Strs("queues", cfg.QueueNames).
+		Dur("poll_interval", cfg.PollInterval).
 		Msg("worker started")
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	go poll.Run(ctx)
 	<-quit
 
 	log.Info().Msg("graceful shutdown initiated...")
@@ -110,8 +118,14 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
+
+	workerdb.MarkWorkerDraining(shutdownCtx, pool, workerID)
 	exec.Drain(shutdownCtx)
 
+	poll.Deregister(shutdownCtx)
 	workerdb.MarkWorkerOffline(context.Background(), pool, workerID)
+	bus.Publish(context.Background(), events.Event{
+		Type: events.WorkerOffline, ProjectID: cfg.ProjectID, WorkerID: workerID,
+	})
 	log.Info().Msg("worker stopped")
 }

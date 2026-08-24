@@ -11,6 +11,9 @@ The whole stack runs from a single terminal:
 ```bash
 cp .env.example .env    # first run only - set DATABASE_URL, JWT_SECRET, PROJECT_ID
 make dev                # same as ./scripts/dev.sh
+WEB_PORT=3000 make dev  # run on a different port
+fuser -k 3000/tcp  # free ports if something else is using them
+docker stop "app-name" # stop a container that is holding the port
 ```
 
 That starts the API on `:8080`, a worker, and the dashboard on `:3000`, streams all

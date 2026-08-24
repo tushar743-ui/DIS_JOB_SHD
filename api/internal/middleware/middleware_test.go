@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,7 +154,7 @@ func TestUserIDFromContextIsEmptyWhenUnset(t *testing.T) {
 
 func TestCORSShortCircuitsPreflight(t *testing.T) {
 	var reached bool
-	h := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CORS([]string{"*"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
 	}))
 
@@ -174,7 +175,7 @@ func TestCORSShortCircuitsPreflight(t *testing.T) {
 
 func TestCORSPassesThroughRealRequests(t *testing.T) {
 	var reached bool
-	h := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := CORS([]string{"*"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -188,5 +189,114 @@ func TestCORSPassesThroughRealRequests(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "*")
+	}
+}
+
+func TestAuthAcceptsQueryTokenOnlyForWebSocketUpgrades(t *testing.T) {
+	const secret = "test-secret"
+	token := signedToken(t, secret, "user-1", time.Hour, jwt.SigningMethodHS256)
+
+	tests := []struct {
+		name     string
+		upgrade  bool
+		wantCode int
+	}{
+		{"websocket upgrade may authenticate via query", true, http.StatusOK},
+		{"plain request may not authenticate via query", false, http.StatusUnauthorized},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Auth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := UserIDFromContext(r.Context()); got != "user-1" {
+					t.Errorf("user id in context = %q, want user-1", got)
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/p1/events?token="+token, nil)
+			if tc.upgrade {
+				req.Header.Set("Upgrade", "websocket")
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestAuthRejectsTokenSignedWithAnotherSecret(t *testing.T) {
+	token := signedToken(t, "attacker-secret", "user-1", time.Hour, jwt.SigningMethodHS256)
+
+	h := Auth("real-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a token signed with the wrong secret reached the handler")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestAuthRejectsExpiredToken(t *testing.T) {
+	const secret = "test-secret"
+	token := signedToken(t, secret, "user-1", -time.Minute, jwt.SigningMethodHS256)
+
+	h := Auth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("an expired token reached the handler")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestCORSHonoursAnOriginAllowlist(t *testing.T) {
+	allowed := "https://dashboard.example.com"
+	h := CORS([]string{allowed})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		origin string
+		want   string
+	}{
+		{allowed, allowed},
+		{"https://evil.example.com", ""},
+	}
+
+	for _, tc := range tests {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/queues", nil)
+		req.Header.Set("Origin", tc.origin)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != tc.want {
+			t.Errorf("origin %s: Access-Control-Allow-Origin = %q, want %q", tc.origin, got, tc.want)
+		}
+	}
+}
+
+func TestRedactedPathHidesWebSocketToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/p1/events?token=super-secret&x=1", nil)
+
+	got := redactedPath(req)
+	if strings.Contains(got, "super-secret") {
+		t.Fatalf("logged path %q leaks the access token", got)
+	}
+	if !strings.Contains(got, "token=redacted") {
+		t.Fatalf("logged path %q does not mark the token as redacted", got)
 	}
 }

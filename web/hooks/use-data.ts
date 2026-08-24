@@ -8,8 +8,8 @@ import {
   type QueueStats,
 } from "@/lib/api";
 
-const LIVE = { refreshInterval: 2000 };
-const SLOW = { refreshInterval: 5000 };
+const LIVE = { refreshInterval: 5000 };
+const SLOW = { refreshInterval: 15000 };
 
 export function useQueues(projectId: string | null) {
   return useSWR<Queue[]>(projectId ? ["queues", projectId] : null, () => queues.list(projectId!), SLOW);
@@ -58,6 +58,14 @@ export function useJobLogs(jobId: string | null) {
 
 export function useJobExecutions(jobId: string | null) {
   return useSWR<JobExecution[]>(jobId ? ["job-execs", jobId] : null, () => jobs.executions(jobId!), LIVE);
+}
+
+export function useHandledJobTypes(projectId: string | null) {
+  return useSWR<string[]>(
+    projectId ? ["job-types", projectId] : null,
+    () => jobs.handledTypes(projectId!),
+    SLOW
+  );
 }
 
 export function useWorkers(projectId: string | null) {

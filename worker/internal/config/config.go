@@ -26,9 +26,12 @@ func Load() *Config {
 		}
 	}
 
-	queues := strings.Split(getEnv("WORKER_QUEUES", "default"), ",")
-	for i, q := range queues {
-		queues[i] = strings.TrimSpace(q)
+	var queues []string
+	if v := os.Getenv("WORKER_QUEUES"); v != "" {
+		queues = strings.Split(v, ",")
+		for i, q := range queues {
+			queues[i] = strings.TrimSpace(q)
+		}
 	}
 
 	return &Config{

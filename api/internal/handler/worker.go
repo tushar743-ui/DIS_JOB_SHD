@@ -31,7 +31,9 @@ func (h *WorkerHandler) List(w http.ResponseWriter, r *http.Request) {
 	query := `SELECT id, project_id, hostname, pid, version, status, concurrency, registered_at, last_heartbeat_at
 	          FROM workers WHERE project_id=$1`
 	args := []any{projectID}
-	if status != "" {
+	if status == "active" {
+		query += ` AND status='active' AND last_heartbeat_at > now() - interval '` + liveWorkerWindow + `'`
+	} else if status != "" {
 		query += " AND status=$2"
 		args = append(args, status)
 	}

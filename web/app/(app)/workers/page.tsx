@@ -24,7 +24,7 @@ export default function WorkerMonitorPage() {
   const { data: runningJobs } = useAllJobs(projectId, "running", true);
   const now = useNow();
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (isLoading && !workerList) return <TableSkeleton rows={5} cols={7} />;
   if (!workerList?.length) {
     return (

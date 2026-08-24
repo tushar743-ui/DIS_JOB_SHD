@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tushar/dis-job-queue/api/internal/authz"
 	"github.com/tushar/dis-job-queue/api/internal/middleware"
 )
 
@@ -107,14 +108,11 @@ func (h *OrgHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
-	userID := middleware.UserIDFromContext(r.Context())
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "name required")
-		return
-	}
-	if !h.hasRole(r, orgID, userID, "owner", "admin") {
-		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
 	_, err := h.db.Exec(r.Context(),
@@ -129,12 +127,10 @@ func (h *OrgHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *OrgHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
-	userID := middleware.UserIDFromContext(r.Context())
-	if !h.hasRole(r, orgID, userID, "owner") {
-		writeError(w, http.StatusForbidden, "only owner can delete organization")
+	if _, err := h.db.Exec(r.Context(), `DELETE FROM organizations WHERE id=$1`, orgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	h.db.Exec(r.Context(), `DELETE FROM organizations WHERE id=$1`, orgID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -167,11 +163,7 @@ func (h *OrgHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 func (h *OrgHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
-	userID := middleware.UserIDFromContext(r.Context())
-	if !h.hasRole(r, orgID, userID, "owner", "admin") {
-		writeError(w, http.StatusForbidden, "insufficient permissions")
-		return
-	}
+
 	var req struct {
 		Email string `json:"email"`
 		Role  string `json:"role"`
@@ -181,8 +173,24 @@ func (h *OrgHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Role == "" {
-		req.Role = "member"
+		req.Role = string(authz.RoleMember)
 	}
+	if !authz.Role(req.Role).Valid() {
+		writeError(w, http.StatusBadRequest, "role must be one of viewer, member, admin, owner")
+		return
+	}
+
+	grant, ok := authz.GrantFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+	if !grant.Role.AtLeast(authz.Role(req.Role)) {
+		writeError(w, http.StatusForbidden,
+			"cannot grant a role higher than your own ("+string(grant.Role)+")")
+		return
+	}
+
 	var targetID string
 	if err := h.db.QueryRow(r.Context(),
 		`SELECT id FROM users WHERE email=$1`, req.Email,
@@ -190,39 +198,69 @@ func (h *OrgHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
-	h.db.Exec(r.Context(),
+
+	var existing string
+	h.db.QueryRow(r.Context(),
+		`SELECT role FROM organization_members WHERE org_id=$1 AND user_id=$2`,
+		orgID, targetID).Scan(&existing)
+	if existing != "" && !grant.Role.AtLeast(authz.Role(existing)) {
+		writeError(w, http.StatusForbidden,
+			"cannot modify a member whose role ("+existing+") is higher than your own")
+		return
+	}
+
+	if _, err := h.db.Exec(r.Context(),
 		`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1,$2,$3)
 		 ON CONFLICT (org_id, user_id) DO UPDATE SET role=EXCLUDED.role`,
-		orgID, targetID, req.Role)
-	writeJSON(w, http.StatusOK, map[string]string{"message": "member added"})
+		orgID, targetID, req.Role); err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "member added", "role": req.Role})
 }
 
 func (h *OrgHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
 	targetID := chi.URLParam(r, "userID")
-	userID := middleware.UserIDFromContext(r.Context())
-	if !h.hasRole(r, orgID, userID, "owner", "admin") {
+
+	grant, ok := authz.GrantFrom(r.Context())
+	if !ok {
 		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
-	h.db.Exec(r.Context(),
-		`DELETE FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, targetID)
-	w.WriteHeader(http.StatusNoContent)
-}
 
-func (h *OrgHandler) hasRole(r *http.Request, orgID, userID string, roles ...string) bool {
-	var role string
+	var targetRole string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT role FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, userID,
-	).Scan(&role); err != nil {
-		return false
+		`SELECT role FROM organization_members WHERE org_id=$1 AND user_id=$2`,
+		orgID, targetID,
+	).Scan(&targetRole); err != nil {
+		writeError(w, http.StatusNotFound, "member not found")
+		return
 	}
-	for _, allowed := range roles {
-		if role == allowed {
-			return true
+	if !grant.Role.AtLeast(authz.Role(targetRole)) {
+		writeError(w, http.StatusForbidden,
+			"cannot remove a member whose role ("+targetRole+") is higher than your own")
+		return
+	}
+
+	if targetRole == string(authz.RoleOwner) {
+		var owners int
+		h.db.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM organization_members WHERE org_id=$1 AND role='owner'`,
+			orgID).Scan(&owners)
+		if owners <= 1 {
+			writeError(w, http.StatusConflict,
+				"cannot remove the last owner of an organization")
+			return
 		}
 	}
-	return false
+
+	if _, err := h.db.Exec(r.Context(),
+		`DELETE FROM organization_members WHERE org_id=$1 AND user_id=$2`, orgID, targetID); err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func slugify(s string) string {

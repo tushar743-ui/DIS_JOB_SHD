@@ -276,7 +276,7 @@ trap 'shutdown' EXIT
 printf '\n%s┌─ dis-job-queue dev ────────────────────────────────────%s\n' "$BOLD" "$RESET"
 printf '%s│%s  api    %s\n' "$BOLD" "$RESET" "$( ((RUN_API))    && echo "http://localhost:$PORT"     || echo "${DIM}skipped$RESET" )"
 printf '%s│%s  web    %s\n' "$BOLD" "$RESET" "$( ((RUN_WEB))    && echo "http://localhost:$WEB_PORT" || echo "${DIM}skipped$RESET" )"
-printf '%s│%s  worker %s\n' "$BOLD" "$RESET" "$( ((RUN_WORKER)) && echo "$WORKER_REPLICAS × queues: ${WORKER_QUEUES:-default}" || echo "${DIM}skipped$RESET" )"
+printf '%s│%s  worker %s\n' "$BOLD" "$RESET" "$( ((RUN_WORKER)) && echo "$WORKER_REPLICAS × queues: ${WORKER_QUEUES:-all}" || echo "${DIM}skipped$RESET" )"
 printf '%s│%s  watch  %s\n' "$BOLD" "$RESET" "$( ((WATCH)) && echo "on (go rebuild on change)" || echo "${DIM}off (--watch to enable)$RESET" )"
 printf '%s└─ Ctrl-C stops everything ──────────────────────────────%s\n\n' "$BOLD" "$RESET"
 

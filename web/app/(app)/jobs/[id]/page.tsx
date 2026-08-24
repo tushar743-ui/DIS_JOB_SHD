@@ -65,7 +65,7 @@ export default function JobDetailPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (!job) return <TableSkeleton rows={6} cols={4} />;
 
   const queueName = queueList?.find((q) => q.id === job.queue_id)?.name ?? job.queue_id;

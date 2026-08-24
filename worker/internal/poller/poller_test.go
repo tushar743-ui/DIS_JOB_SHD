@@ -27,8 +27,8 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("DATABASE_URL") == "" || os.Getenv("PROJECT_ID") == "" {
-		fmt.Println("SKIP: DATABASE_URL or PROJECT_ID not set - integration tests require a real database")
+	if os.Getenv("DATABASE_URL") == "" {
+		fmt.Println("SKIP: DATABASE_URL not set - integration tests require a real database")
 		os.Exit(0)
 	}
 
@@ -50,20 +50,38 @@ func TestMain(m *testing.M) {
 		}
 	}
 	testPool = pool
-	testProjectID = cfg.ProjectID
 
+	// Isolated org/project/queue per run so these tests never touch the
+	// queues a real dev worker (make dev) is polling against the same DB.
 	ctx := context.Background()
+	runName := "poller-integration-test-" + workerHex()
+	var orgID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO organizations (name, slug) VALUES ($1,$1) RETURNING id`, runName,
+	).Scan(&orgID); err != nil {
+		fmt.Fprintf(os.Stderr, "create test org: %v\n", err)
+		os.Exit(1)
+	}
+	var projectID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id, name, slug, api_key_hash) VALUES ($1,$2,$2,$2) RETURNING id`,
+		orgID, runName,
+	).Scan(&projectID); err != nil {
+		fmt.Fprintf(os.Stderr, "create test project: %v\n", err)
+		os.Exit(1)
+	}
+	testProjectID = projectID
 	var qid string
-	err = pool.QueryRow(ctx,
-		`SELECT id FROM queues WHERE project_id=$1 LIMIT 1`, testProjectID,
-	).Scan(&qid)
-	if err != nil || qid == "" {
-		fmt.Fprintln(os.Stderr, "no queues found for PROJECT_ID - run API integration tests first to create them")
-		os.Exit(0)
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO queues (project_id, name) VALUES ($1,'default') RETURNING id`, projectID,
+	).Scan(&qid); err != nil {
+		fmt.Fprintf(os.Stderr, "create test queue: %v\n", err)
+		os.Exit(1)
 	}
 	testQueueID = qid
 
 	code := m.Run()
+	pool.Exec(ctx, `DELETE FROM organizations WHERE id=$1`, orgID)
 	pool.Close()
 	os.Exit(code)
 }
@@ -153,7 +171,7 @@ func TestPriorityOrdering(t *testing.T) {
 
 	workerID := registerWorker(t, testProjectID)
 
-	exec := executor.New(testPool, nil, workerID, &config.Config{Concurrency: 1})
+	exec := executor.New(testPool, nil, nil, workerID, &config.Config{Concurrency: 1})
 
 	var mu sync.Mutex
 	var processedPriorities []int
@@ -179,8 +197,8 @@ func TestPriorityOrdering(t *testing.T) {
 		Concurrency:  1,
 		PollInterval: 50 * time.Millisecond,
 	}
-	p := poller.New(testPool, nil, exec, workerID, cfg)
-	p.ResolveQueueIDs(ctx)
+	p := poller.New(testPool, nil, exec, nil, workerID, cfg)
+	p.RefreshTopology(ctx)
 
 	pollCtx, pollCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer pollCancel()
@@ -234,7 +252,7 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 			Concurrency:  5,
 			PollInterval: 50 * time.Millisecond,
 		}
-		exec := executor.New(testPool, nil, wid, &config.Config{Concurrency: 5})
+		exec := executor.New(testPool, nil, nil, wid, &config.Config{Concurrency: 5})
 		exec.Register("skip_lock_test", func(ctx context.Context, job *executor.Job) error {
 			if _, loaded := claimed.LoadOrStore(job.ID, wid); loaded {
 				atomic.AddInt32(&duplicates, 1)
@@ -243,8 +261,8 @@ func TestSkipLocked_NoDuplicateClaims(t *testing.T) {
 			return nil
 		})
 
-		p := poller.New(testPool, nil, exec, wid, cfg)
-		p.ResolveQueueIDs(ctx)
+		p := poller.New(testPool, nil, exec, nil, wid, cfg)
+		p.RefreshTopology(ctx)
 
 		wg.Add(1)
 		go func() {
@@ -305,8 +323,8 @@ func TestScheduler_PromotesScheduledJobs(t *testing.T) {
 		PollInterval: 100 * time.Millisecond,
 	}
 	wid := registerWorker(t, testProjectID)
-	exec := executor.New(testPool, nil, wid, &config.Config{Concurrency: 1})
-	p := poller.New(testPool, nil, exec, wid, cfg)
+	exec := executor.New(testPool, nil, nil, wid, &config.Config{Concurrency: 1})
+	p := poller.New(testPool, nil, exec, nil, wid, cfg)
 
 	schedCtx, schedCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer schedCancel()
@@ -348,13 +366,13 @@ func TestFailure_MovesToDLQ(t *testing.T) {
 		Concurrency:  2,
 		PollInterval: 200 * time.Millisecond,
 	}
-	exec := executor.New(testPool, nil, wid, &config.Config{Concurrency: 2})
+	exec := executor.New(testPool, nil, nil, wid, &config.Config{Concurrency: 2})
 	exec.Register("always_fail_dlq", func(ctx context.Context, job *executor.Job) error {
 		return fmt.Errorf("intentional failure for DLQ test")
 	})
 
-	p := poller.New(testPool, nil, exec, wid, cfg)
-	p.ResolveQueueIDs(ctx)
+	p := poller.New(testPool, nil, exec, nil, wid, cfg)
+	p.RefreshTopology(ctx)
 	pollCtx, pollCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer pollCancel()
 	go p.Run(pollCtx)
@@ -400,13 +418,13 @@ func TestPausedQueue_JobsNotClaimed(t *testing.T) {
 		Concurrency:  2,
 		PollInterval: 200 * time.Millisecond,
 	}
-	exec := executor.New(testPool, nil, wid, &config.Config{Concurrency: 2})
+	exec := executor.New(testPool, nil, nil, wid, &config.Config{Concurrency: 2})
 	exec.Register("paused_queue_test", func(ctx context.Context, job *executor.Job) error {
 		return nil
 	})
 
-	p := poller.New(testPool, nil, exec, wid, cfg)
-	p.ResolveQueueIDs(ctx)
+	p := poller.New(testPool, nil, exec, nil, wid, cfg)
+	p.RefreshTopology(ctx)
 
 	pollCtx, pollCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer pollCancel()
@@ -470,13 +488,13 @@ func TestLoad_20Workers_200Jobs(t *testing.T) {
 			Concurrency:  concurrency,
 			PollInterval: 150 * time.Millisecond,
 		}
-		exec := executor.New(testPool, nil, wid, &config.Config{Concurrency: concurrency})
+		exec := executor.New(testPool, nil, nil, wid, &config.Config{Concurrency: concurrency})
 		for name, h := range handlers {
 			exec.Register(name, h)
 		}
-		p := poller.New(testPool, nil, exec, wid, cfg)
-		if err := p.ResolveQueueIDs(ctx); err != nil {
-			t.Logf("worker %d: ResolveQueueIDs failed: %v", w, err)
+		p := poller.New(testPool, nil, exec, nil, wid, cfg)
+		if err := p.RefreshTopology(ctx); err != nil {
+			t.Logf("worker %d: RefreshTopology failed: %v", w, err)
 			continue
 		}
 

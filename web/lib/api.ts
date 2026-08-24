@@ -147,6 +147,7 @@ export const jobs = {
     return req<JobLog[]>(`/jobs/${id}/logs?${qs}`);
   },
   executions: (id: string) => req<JobExecution[]>(`/jobs/${id}/executions`),
+  handledTypes: (projectId: string) => req<string[]>(`/projects/${projectId}/job-types`),
 };
 
 export const workers = {

@@ -150,7 +150,8 @@ func (h *MetricsHandler) ProjectMetrics(w http.ResponseWriter, r *http.Request) 
 
 	var activeWorkers int
 	h.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM workers WHERE project_id=$1 AND status='active'`, projectID,
+		`SELECT COUNT(*) FROM workers WHERE project_id=$1 AND status='active'
+		   AND last_heartbeat_at > now() - interval '`+liveWorkerWindow+`'`, projectID,
 	).Scan(&activeWorkers)
 
 	completed24h := 0

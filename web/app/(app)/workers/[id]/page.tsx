@@ -36,7 +36,7 @@ export default function WorkerDetailPage() {
     [beats]
   );
 
-  if (error) return <ErrorState onRetry={() => mutate()} />;
+  if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
   if (!worker) return <TableSkeleton rows={4} cols={4} />;
 
   const stale = now - new Date(worker.last_heartbeat_at).getTime() > 30_000;

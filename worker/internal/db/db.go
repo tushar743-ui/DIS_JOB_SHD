@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"time"
 
@@ -59,12 +58,14 @@ func MarkWorkerOffline(ctx context.Context, pool *pgxpool.Pool, workerID string)
 		`UPDATE workers SET status='offline', last_heartbeat_at=now() WHERE id=$1`, workerID)
 }
 
+func MarkWorkerDraining(ctx context.Context, pool *pgxpool.Pool, workerID string) {
+	pool.Exec(ctx,
+		`UPDATE workers SET status='draining', last_heartbeat_at=now() WHERE id=$1`, workerID)
+}
+
 func RegisterWorker(ctx context.Context, pool *pgxpool.Pool, projectID string, concurrency int, queueIDs []string) (string, error) {
 	hostname, _ := os.Hostname()
 	pid := os.Getpid()
-
-	addrs, _ := net.LookupHost(hostname)
-	_ = addrs
 
 	var workerID string
 	err := pool.QueryRow(ctx,

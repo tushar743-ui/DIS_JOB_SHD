@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { jobs as jobsApi, type Queue } from "@/lib/api";
 import { reportError } from "@/lib/errors";
+import { useHandledJobTypes } from "@/hooks/use-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -38,6 +39,7 @@ export function CreateJobDialog({
   onCreated: () => void;
 }) {
   const [open, onOpenChange] = useState(false);
+  const { data: handledTypes } = useHandledJobTypes(queues[0]?.project_id ?? null);
 
   const {
     register, handleSubmit, reset,
@@ -113,8 +115,21 @@ export function CreateJobDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="j-type">Job type</Label>
-              <Input id="j-type" placeholder="send_email" className="rounded-md" aria-invalid={Boolean(errors.type)} {...register("type")} />
+              <Input
+                id="j-type"
+                list="j-type-options"
+                placeholder="send_email"
+                className="rounded-md"
+                aria-invalid={Boolean(errors.type)}
+                {...register("type")}
+              />
+              <datalist id="j-type-options">
+                {(handledTypes ?? []).map((t) => <option key={t} value={t} />)}
+              </datalist>
               {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+              {handledTypes && handledTypes.length === 0 && (
+                <p className="text-xs text-muted-foreground">No live worker is reporting handled types yet.</p>
+              )}
             </div>
           </div>
 

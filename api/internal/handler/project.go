@@ -45,7 +45,9 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "name required")
 		return
@@ -85,7 +87,9 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "name required")
 		return
@@ -111,13 +115,13 @@ func (h *ProjectHandler) RotateKey(w http.ResponseWriter, r *http.Request) {
 }
 
 type retryPolicyRow struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	Strategy         string  `json:"strategy"`
-	MaxAttempts      int     `json:"max_attempts"`
-	InitialDelayMs   int     `json:"initial_delay_ms"`
-	MaxDelayMs       int     `json:"max_delay_ms"`
-	Multiplier       float64 `json:"multiplier"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Strategy       string  `json:"strategy"`
+	MaxAttempts    int     `json:"max_attempts"`
+	InitialDelayMs int     `json:"initial_delay_ms"`
+	MaxDelayMs     int     `json:"max_delay_ms"`
+	Multiplier     float64 `json:"multiplier"`
 }
 
 func (h *ProjectHandler) ListRetryPolicies(w http.ResponseWriter, r *http.Request) {
