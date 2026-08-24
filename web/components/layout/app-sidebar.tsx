@@ -11,7 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/ui-store";
 import { useAuthStore } from "@/lib/auth-store";
-import { useBackendHealth } from "@/hooks/use-data";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 
@@ -57,7 +56,6 @@ export function AppSidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
   const { user, clear } = useAuthStore();
-  const { online } = useBackendHealth();
 
   function signOut() {
     clear();
@@ -75,25 +73,7 @@ export function AppSidebar() {
           JF
         </span>
         {!collapsed && (
-          <>
-            <span className="truncate text-sm font-semibold tracking-tight">JobFlow</span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="relative ml-auto flex size-2" aria-label={online ? "Backend online" : "Backend unreachable"}>
-                    <span
-                      className={cn(
-                        "absolute inline-flex size-full rounded-full opacity-75",
-                        online ? "animate-ping bg-state-completed" : "bg-destructive"
-                      )}
-                    />
-                    <span className={cn("relative inline-flex size-2 rounded-full", online ? "bg-state-completed" : "bg-destructive")} />
-                  </span>
-                }
-              />
-              <TooltipContent side="right">{online ? "Backend reachable" : "Backend unreachable"}</TooltipContent>
-            </Tooltip>
-          </>
+          <span className="truncate text-sm font-semibold tracking-tight">JobFlow</span>
         )}
       </div>
 

@@ -4,15 +4,13 @@ import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Moon, Sun, Bell, ExternalLink, Search, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Moon, Sun, ExternalLink, Search, ChevronRight } from "lucide-react";
 import { useUIStore } from "@/lib/ui-store";
 import { useAuthStore } from "@/lib/auth-store";
-import { useBackendHealth, useQueues, useAllJobs } from "@/hooks/use-data";
+import { useQueues, useAllJobs } from "@/hooks/use-data";
 import {
   Command, CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from "@/components/ui/command";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -45,7 +43,6 @@ export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { online } = useBackendHealth();
   const projectId = useAuthStore((s) => s.projectId);
   const user = useAuthStore((s) => s.user);
   const open = useUIStore((s) => s.commandOpen);
@@ -101,29 +98,6 @@ export function TopBar() {
       </button>
 
       <div className="ml-auto flex items-center gap-1.5">
-        <Badge
-          variant="outline"
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "gap-1.5 rounded-full px-2.5 text-[10px] font-medium",
-            online ? "border-state-completed/40 text-state-completed" : "border-destructive/40 text-destructive"
-          )}
-        >
-          <span className="relative flex size-1.5">
-            {online && <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-75" />}
-            <span className="relative inline-flex size-1.5 rounded-full bg-current" />
-          </span>
-          {online ? "LIVE" : "OFFLINE"}
-        </Badge>
-
-        <button
-          aria-label="Notifications"
-          className="relative grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
-        >
-          <Bell className="size-4" />
-        </button>
-
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           aria-label="Toggle theme"
