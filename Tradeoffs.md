@@ -24,7 +24,7 @@ and every other durable fact (queue config, worker health, retry history,
 auth tokens) lives in the same database. One store to back up, one store to
 reason about consistency in, no dual-write problem between a broker and a
 system of record. Cost: throughput ceiling is whatever one Postgres primary
-can do — tens of thousands of claims/sec, not the millions a purpose-built
+can do - tens of thousands of claims/sec, not the millions a purpose-built
 broker manages. Right call at the target scale (single org's internal job
 traffic); wrong call past roughly 5-10k jobs/sec sustained, where a real
 broker's partitioned log beats row-level locking.
@@ -33,13 +33,13 @@ broker's partitioned log beats row-level locking.
 Branching for throwaway test databases, autoscaling, pooled connections
 without running PgBouncer by hand. Cost: the pooled endpoint can't run
 migrations (PgBouncer transaction mode doesn't support the advisory locks
-`golang-migrate` takes — migrations have to hit the direct endpoint), and cold
+`golang-migrate` takes - migrations have to hit the direct endpoint), and cold
 branches add latency on first connect. Self-hosted Postgres would remove both
 issues but hands back all the operational work Neon does automatically.
 
 ### Upstash Redis over self-hosted / managed cluster
-Redis here is intentionally narrow — rate limits, pub/sub, locks, shard
-registry, AI quota — nothing durable. A serverless, pay-per-request Redis
+Redis here is intentionally narrow - rate limits, pub/sub, locks, shard
+registry, AI quota - nothing durable. A serverless, pay-per-request Redis
 fits that shape better than provisioning and sizing a cluster for what is,
 by design, disposable state. Cost: per-command pricing gets worse than a
 fixed-size instance once event volume is high (every job transition
@@ -62,7 +62,7 @@ chi is a thin `net/http`-compatible router; middleware is just
 composed from standard interfaces instead of framework-specific hooks.
 Cost: no built-in validation/binding helpers, both handled by hand in each
 handler. Trade accepted because the extra framework surface wasn't buying
-anything the standard library plus one router didn't already cover — see the
+anything the standard library plus one router didn't already cover - see the
 project's own build rule ("stdlib does it → use it").
 
 ### REST over gRPC
@@ -84,7 +84,7 @@ entirely. This is the middle point: fast common path, revocable exception
 path.
 
 ### Next.js App Router + SWR polling with a WebSocket overlay (vs pure polling, vs pure WebSocket)
-SWR's polling is the baseline — always correct, degrades gracefully, works
+SWR's polling is the baseline - always correct, degrades gracefully, works
 even if a socket never connects. The WebSocket hook (`useLiveEvents`) layers
 targeted revalidation on top for sub-second freshness but is never the only
 path to correct data. Pure WebSocket-only would mean a dropped connection
@@ -95,8 +95,8 @@ an operator can tell which mode they're actually in.
 ### Groq (OpenAI-compatible Chat Completions) over Anthropic direct
 Originally built against Anthropic's Messages API; swapped when the user
 supplied a Groq key. Groq's `strict: true` JSON-schema mode gives the same
-guarantee Anthropic's structured output did — the AI's `category`/
-`confidence` fields can never violate the DB's `CHECK` constraints — at
+guarantee Anthropic's structured output did - the AI's `category`/
+`confidence` fields can never violate the DB's `CHECK` constraints - at
 lower cost and lower latency per call. Cost: smaller open-weight models
 (`gpt-oss-20b/120b`) reason less carefully on ambiguous failures than a
 frontier model would. Acceptable here because the feature is a diagnostic
@@ -107,7 +107,7 @@ Job payloads and execution logs stay in Postgres for now, since actual
 volume in this deployment target doesn't justify object storage's added
 moving part. The schema and code are written so payload/log blobs can be
 redirected to object storage without a breaking change, but that migration
-is deferred until row/table size actually demands it — premature
+is deferred until row/table size actually demands it - premature
 infrastructure has a real maintenance cost too.
 
 ---
@@ -125,10 +125,10 @@ which sharding exists specifically to relieve.
 
 ### Scheduler leadership: elected, but correctness never depends on it
 Only one worker runs the promote/cron/unblock/reclaim sweep at a time,
-elected via a Redis lock — this avoids redundant work, not incorrect work.
+elected via a Redis lock - this avoids redundant work, not incorrect work.
 Every sweep statement is idempotent, so when Redis is unreachable the sweep
-runs unguarded on every worker instead of stopping. The alternative — treat
-the lock as required — would turn a Redis outage into a scheduling outage.
+runs unguarded on every worker instead of stopping. The alternative - treat
+the lock as required - would turn a Redis outage into a scheduling outage.
 Trading a little duplicate work for continued availability was the explicit
 choice.
 
@@ -137,7 +137,7 @@ HRW needs no ring structure or virtual nodes, computes ownership
 independently per shard, and reshuffles the minimum number of assignments
 when a worker joins or leaves. Fixed modulo (`shard % worker_count`) would
 reshuffle nearly everything on every membership change. Cost: HRW does not
-guarantee tight per-worker balance — at 64 shards over 8 workers the
+guarantee tight per-worker balance - at 64 shards over 8 workers the
 standard deviation is around 2.65, so one worker holding 3 shards is normal
 variance, not a bug. Mitigation is operational: keep `shard_count` well
 above worker count.
@@ -147,8 +147,8 @@ If the Redis shard registry is unreachable, a worker claims every shard
 instead of none. This looks wasteful but is deliberate: `SKIP LOCKED` still
 guarantees no duplicate execution regardless of shard ownership, so
 degrading to "everyone claims everything" only costs some redundant lock
-contention, never a double-run job. The alternative — refuse to claim
-without a live registry — would turn a Redis blip into a total processing
+contention, never a double-run job. The alternative - refuse to claim
+without a live registry - would turn a Redis blip into a total processing
 stall.
 
 ### Event-driven wake-up layered on the poll ticker, not replacing it
@@ -159,7 +159,7 @@ Building this as pub/sub-only would have made Redis load-bearing for
 correctness, which the rest of the system deliberately avoids.
 
 ### Retry backoff strategies capped by policy, computed at execute time
-Fixed, linear, exponential — all capped at a configurable `max_delay_ms` so
+Fixed, linear, exponential - all capped at a configurable `max_delay_ms` so
 a misconfigured exponential policy can't produce an hours-long delay by
 accident. The cap is enforced in the executor, not just documented as a
 convention, so a bad policy value degrades to "always wait the cap" instead
@@ -179,8 +179,8 @@ work.
 
 ### Three tables for job state instead of one wide table
 `jobs`, `job_executions`, `job_logs` are separated because they have
-different write cardinality — one row per job, one row per attempt, many
-rows per attempt — and different retention needs. A single wide table would
+different write cardinality - one row per job, one row per attempt, many
+rows per attempt - and different retention needs. A single wide table would
 simplify some queries but would force every log line to either bloat the
 jobs table or live in a JSON blob no index can target individually.
 
@@ -211,7 +211,7 @@ up, or delete rows that should have survived their parent's removal.
 
 ### `job_status` as a Postgres ENUM, not TEXT
 Smaller on disk and self-documenting as a `CHECK` constraint that can never
-silently drift out of sync with the application's status list — the
+silently drift out of sync with the application's status list - the
 database itself rejects an invalid status string. Cost: adding a new status
 value later requires a migration that runs `ALTER TYPE ... ADD VALUE` in its
 own transaction (Postgres forbids using a new enum value in the same
@@ -233,7 +233,7 @@ to the token's lifetime.
 
 ### 404, not 403, for resources outside a caller's org
 A non-member requesting someone else's job gets "not found," not "forbidden"
-— the API never confirms a resource exists to someone who can't see it.
+- the API never confirms a resource exists to someone who can't see it.
 This closes an enumeration side-channel that 403 responses open. Cost: a
 legitimate caller who mistypes an ID gets the same response as one probing
 for other tenants' data, which is a slightly worse debugging experience,
@@ -262,7 +262,7 @@ semantics are exactly the kind of logic that mocks would either get wrong or
 not bother modeling at all. Running the concurrency tests (20 workers × 200
 jobs, exactly-once shard coverage) against the real database is what
 actually caught the race condition in the WebSocket hub's subscribe timing
-and the shard-hashing skew bug — neither would have surfaced against an
+and the shard-hashing skew bug - neither would have surfaced against an
 in-memory fake. Cost: the integration suite takes minutes, not
 milliseconds, and needs live credentials in CI. Split into a separate
 `-tags integration` build specifically so the fast unit suite stays fast for
@@ -281,7 +281,7 @@ no benefit to the tests that don't need it.
 
 ### Multi-module Go workspace (`api/`, `worker/`, `shared/`) over one module
 `shared/` holds exactly the contracts that must never drift between the API
-and the worker fleet — event types, lock semantics, shard math — imported by
+and the worker fleet - event types, lock semantics, shard math - imported by
 both, each module still buildable and deployable independently. A single
 module would make that sharing implicit and easier to accidentally couple;
 fully separate repos would make keeping the contract in sync a manual,
@@ -334,8 +334,8 @@ it widens who can reach the demo workspace, not what a session can do.
 
 ### The demo account gets full access, not a read-only viewer role
 A public button granting `owner` on a real workspace is a deliberate choice,
-not an oversight: the point is to let someone evaluate the system — create a
-queue, pause it, retry a dead job — which a `viewer` role would block. The
+not an oversight: the point is to let someone evaluate the system - create a
+queue, pause it, retry a dead job - which a `viewer` role would block. The
 trade is that any visitor can also mutate that workspace. That is acceptable
 for a workspace whose entire contents are machine-generated demo traffic, and
 would not be for one holding anything real.
@@ -361,7 +361,7 @@ opposite duplication semantics.
 skips any queue already at `DEMO_BACKLOG_MAX` in-flight jobs, so it never
 outruns the workers, and prunes its own completed jobs past `DEMO_RETENTION`.
 The pruner is scoped to `status='completed'` rows tagged `demo`, so it can
-never touch real data, and deliberately leaves `dead` jobs alone — those are
+never touch real data, and deliberately leaves `dead` jobs alone - those are
 the DLQ's demo content and the failure rate already bounds them.
 
 ### One project-wide jobs endpoint instead of per-queue fan-out
@@ -386,7 +386,7 @@ monitoring view.
 ## Known Debt (left as-is deliberately, not by oversight)
 
 - Queue config sheet collects `rate_limit_enabled` / `rate_limit_per_minute`
-  in the form but the backend never receives them — the per-queue rate
+  in the form but the backend never receives them - the per-queue rate
   limiting feature was scoped out after the form was built; the dead field
   is left visible rather than silently dropped, pending a decision to wire
   it up or remove it.

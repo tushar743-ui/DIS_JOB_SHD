@@ -1,9 +1,23 @@
 # dis-job-queue
 
-A production-inspired distributed job scheduling platform. It executes asynchronous
-background jobs across multiple worker processes with priority scheduling, configurable
-retry policies, cron recurrence, workflow dependencies, queue sharding, a dead-letter
-queue, role-based access control, and a real-time operator dashboard.
+A distributed job scheduler that keeps thousands of background jobs running exactly
+once, on time, and in the right order - powered by leader-elected cron scheduling,
+Redis-backed rate limiting and distributed locks, rendezvous-hashed queue sharding,
+DAG-aware workflow dependencies, and a live WebSocket-driven dashboard.
+
+
+**Stack**
+
+- **Go** - API server & worker runtime
+- **Next.js** - real-time operator dashboard
+- **PostgreSQL (Neon)** - durable source of truth
+- **Redis (Upstash)** - rate limiting, pub/sub, distributed locks, shard registry
+- **Chi** - HTTP routing & middleware chain
+- **JWT** - stateless auth & RBAC
+- **WebSocket** - live job/queue/worker events
+- **golang-migrate** - schema migrations
+- **Docker** - containerized builds & deploys
+- **Groq (LLM)** - AI-generated job failure summaries (optional)
 
 Full REST/WebSocket API reference: **[API.md](API.md)**.
 
