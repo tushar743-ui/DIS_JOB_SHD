@@ -63,7 +63,7 @@ services:
       - key: ENV
         value: production
       - key: DEMO_MODE
-        value: "false"
+        sync: false
 
   - type: web
     name: djq-web
