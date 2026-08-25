@@ -449,8 +449,10 @@ ok "Bulk submitted $SUBMITTED/100 random jobs across queues"
 echo ""
 echo "=== 11. STARTING 20 WORKER PROCESSES ==="
 
-DB_URL="postgresql://neondb_owner:npg_tv71rcHUzfaP@ep-weathered-breeze-azjivzw5-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-REDIS_URL_VAL="rediss://default:gQAAAAAAAWrDAAIgcDIzZTE2YmNkYjBkMDQ0NjUyYTU2NWZlZTljMjE4OGVlNg@ace-rooster-92867.upstash.io:6379"
+: "${DATABASE_URL:?Set DATABASE_URL in your environment (e.g. via .env) before running this script}"
+: "${REDIS_URL:?Set REDIS_URL in your environment (e.g. via .env) before running this script}"
+DB_URL="$DATABASE_URL"
+REDIS_URL_VAL="$REDIS_URL"
 
 WORKER_QUEUES_LIST="default,email,notifications,reports,payments"
 WORKER_PIDS=()

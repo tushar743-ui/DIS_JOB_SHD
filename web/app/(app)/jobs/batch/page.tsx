@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useAllJobs, useQueues } from "@/hooks/use-data";
 import { StateDot } from "@/components/job-state-badge";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { NoActiveWorkerBanner } from "@/components/no-worker-banner";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -57,17 +58,21 @@ export default function BatchJobsPage() {
   if (isLoading && !data) return <TableSkeleton rows={4} cols={4} />;
   if (!batches.length) {
     return (
-      <EmptyState
-        icon={Layers}
-        title="No batch jobs"
-        description="Jobs enqueued through the batch endpoint are grouped here by their batch ID."
-        action={newBatchTrigger}
-      />
+      <div className="space-y-4">
+        <NoActiveWorkerBanner />
+        <EmptyState
+          icon={Layers}
+          title="No batch jobs"
+          description="Jobs enqueued through the batch endpoint are grouped here by their batch ID."
+          action={newBatchTrigger}
+        />
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <NoActiveWorkerBanner />
       <div className="flex justify-end">{newBatchTrigger}</div>
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
       {batches.map((b, i) => {

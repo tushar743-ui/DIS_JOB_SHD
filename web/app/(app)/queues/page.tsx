@@ -10,6 +10,7 @@ import { queues as queuesApi, type Queue } from "@/lib/api";
 import { QueueConfigSheet } from "@/components/queues/queue-config-sheet";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { NoActiveWorkerBanner } from "@/components/no-worker-banner";
 import { reportError } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -54,6 +55,8 @@ export default function QueueManagerPage() {
 
   return (
     <div className="space-y-4">
+      <NoActiveWorkerBanner />
+
       <div className="flex items-center justify-between">
         <p className="t-meta text-muted-foreground">
           <span className="font-mono font-medium tabular-nums text-foreground">{queueList?.length ?? 0}</span>

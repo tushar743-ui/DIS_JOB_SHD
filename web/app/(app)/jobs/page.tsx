@@ -12,6 +12,7 @@ import { jobs as jobsApi } from "@/lib/api";
 import { JobStateBadge, StateDot } from "@/components/job-state-badge";
 import { formatElapsed, useElapsedTime } from "@/hooks/use-elapsed-time";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
+import { NoActiveWorkerBanner } from "@/components/no-worker-banner";
 import { reportError } from "@/lib/errors";
 import { canCancel, canRetry, applyJobAction, type JobAction } from "@/lib/job-actions";
 import { CreateJobDialog } from "@/components/jobs/create-job-dialog";
@@ -279,6 +280,8 @@ export default function JobExplorerPage() {
 
   return (
     <div className="space-y-4">
+      <NoActiveWorkerBanner />
+
       <div className="flex flex-wrap items-center gap-2">
         <Select value={state} onValueChange={(v) => { if (v) { setState(v); setCursor(0); } }}>
           <SelectTrigger className="w-36 rounded-lg" aria-label="Filter by state">
