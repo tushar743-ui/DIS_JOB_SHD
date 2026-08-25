@@ -70,7 +70,6 @@ die()  { printf '%s%s%s\n' "$RED$BOLD" "$*" "$RESET" >&2; exit 1; }
 
 if [[ -f "$ROOT/.env" ]]; then
   set -a
-  # shellcheck disable=SC1091
   source "$ROOT/.env"
   set +a
 else

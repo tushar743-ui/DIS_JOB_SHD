@@ -8,14 +8,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL    string
-	RedisURL       string
-	ProjectID      string
-	QueueNames     []string
-	Concurrency    int
-	PollInterval   time.Duration
+	DatabaseURL       string
+	RedisURL          string
+	ProjectID         string
+	QueueNames        []string
+	Concurrency       int
+	PollInterval      time.Duration
 	HeartbeatInterval time.Duration
-	Env            string
+	Env               string
 	DemoMode          bool
 	DemoInterval      time.Duration
 	DemoBurst         int

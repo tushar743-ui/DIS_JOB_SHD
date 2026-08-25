@@ -102,8 +102,8 @@ func TestWorkflowDependencyGraphEndpoint(t *testing.T) {
 			JobID  string `json:"job_id"`
 			Status string `json:"status"`
 		} `json:"depends_on"`
-		BlockedBy []string                         `json:"blocked_by"`
-		Satisfied bool                             `json:"satisfied"`
+		BlockedBy []string `json:"blocked_by"`
+		Satisfied bool     `json:"satisfied"`
 	}
 	mustDecode(resp, &child)
 
@@ -120,7 +120,7 @@ func TestWorkflowDependencyGraphEndpoint(t *testing.T) {
 		Dependents []struct {
 			JobID string `json:"job_id"`
 		} `json:"dependents"`
-		Satisfied  bool                     `json:"satisfied"`
+		Satisfied bool `json:"satisfied"`
 	}
 	mustDecode(resp, &parent)
 

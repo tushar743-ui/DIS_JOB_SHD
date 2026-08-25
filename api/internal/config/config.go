@@ -8,19 +8,19 @@ import (
 )
 
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	RedisURL         string
-	JWTSecret        string
-	JWTExpiry        time.Duration
-	RefreshExpiry    time.Duration
-	Env              string
-	CORSOrigins      []string
-	RateLimit        int
-	RateLimitWindow  time.Duration
-	GroqAPIKey       string
-	AISummaryModel   string
-	DemoEmail        string
+	Port            string
+	DatabaseURL     string
+	RedisURL        string
+	JWTSecret       string
+	JWTExpiry       time.Duration
+	RefreshExpiry   time.Duration
+	Env             string
+	CORSOrigins     []string
+	RateLimit       int
+	RateLimitWindow time.Duration
+	GroqAPIKey      string
+	AISummaryModel  string
+	DemoEmail       string
 }
 
 func Load() *Config {

@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/tushar/dis-job-queue/shared/events"
@@ -20,6 +24,50 @@ import (
 	"github.com/tushar/dis-job-queue/worker/internal/heartbeat"
 	"github.com/tushar/dis-job-queue/worker/internal/poller"
 )
+
+func runHealthServer(ctx context.Context, pool *pgxpool.Pool, rdb *redis.Client) {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "10000"
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		checkCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+
+		checks := map[string]string{"database": "ok", "redis": "ok"}
+		status := http.StatusOK
+
+		if err := pool.Ping(checkCtx); err != nil {
+			checks["database"] = "unreachable"
+			status = http.StatusServiceUnavailable
+		}
+		if err := rdb.Ping(checkCtx).Err(); err != nil {
+			checks["redis"] = "degraded"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok":     status == http.StatusOK,
+			"checks": checks,
+		})
+	})
+
+	srv := &http.Server{Addr: ":" + port, Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
+	log.Info().Str("port", port).Msg("worker health server listening")
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error().Err(err).Msg("health server failed")
+	}
+}
 
 func simulateWork(name string) executor.Handler {
 	return func(ctx context.Context, job *executor.Job) error {
@@ -108,6 +156,7 @@ func main() {
 	go hb.Run(ctx)
 	go poll.RunScheduler(ctx)
 	go poll.Run(ctx)
+	go runHealthServer(ctx, pool, rdb)
 
 	if cfg.DemoMode {
 		go demo.New(pool, rdb, bus, cfg, demoJobTypes).Run(ctx)
