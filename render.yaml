@@ -64,6 +64,12 @@ services:
         value: production
       - key: DEMO_MODE
         sync: false
+      - key: DEMO_INTERVAL
+        value: 6s
+      - key: DEMO_BURST
+        value: "1"
+      - key: DEMO_BACKLOG_MAX
+        value: "60"
 
   - type: web
     name: djq-web

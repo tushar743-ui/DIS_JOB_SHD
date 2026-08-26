@@ -137,11 +137,19 @@ func (h *JobHandler) ListByProject(w http.ResponseWriter, r *http.Request) {
 		args = append(args, status)
 	}
 
+	countCh := make(chan int, 1)
+	go func() {
+		var total int
+		h.db.QueryRow(context.WithoutCancel(r.Context()),
+			`SELECT COUNT(*) FROM jobs j `+where, args...).Scan(&total)
+		countCh <- total
+	}()
+
 	rows, err := h.db.Query(r.Context(),
 		`SELECT `+prefixed(jobColumns, "j")+`, q.name
 		 FROM jobs j JOIN queues q ON q.id = j.queue_id `+where+
 			fmt.Sprintf(` ORDER BY j.created_at DESC LIMIT $%d OFFSET $%d`, len(args)+1, len(args)+2),
-		append(args, limit, offset)...)
+		append(append([]any{}, args...), limit, offset)...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
@@ -167,9 +175,7 @@ func (h *JobHandler) ListByProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var total int
-	h.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM jobs j `+where, args...).Scan(&total)
+	total := <-countCh
 	writeJSON(w, http.StatusOK, paginated[projectJobRow]{Data: jobs, Total: total, Limit: limit, Offset: offset})
 }
 

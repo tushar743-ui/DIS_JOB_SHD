@@ -98,12 +98,6 @@ var jobTypes = []string{
 	"extract", "transform", "load", "notify", "workflow_step",
 }
 
-var demoJobTypes = []string{
-	"process_order", "sync_inventory", "generate_report", "send_email",
-	"push_notification", "etl_batch", "transcode_video", "process_payment",
-	"fraud_check", "cleanup_temp_files", "send_sms", "notify",
-}
-
 func main() {
 	_ = godotenv.Load()
 
@@ -159,7 +153,7 @@ func main() {
 	go runHealthServer(ctx, pool, rdb)
 
 	if cfg.DemoMode {
-		go demo.New(pool, rdb, bus, cfg, demoJobTypes).Run(ctx)
+		go demo.New(pool, rdb, bus, cfg, exec.RegisteredTypes()).Run(ctx)
 		log.Info().
 			Dur("interval", cfg.DemoInterval).
 			Int("burst", cfg.DemoBurst).

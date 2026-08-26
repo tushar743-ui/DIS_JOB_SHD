@@ -77,8 +77,9 @@ export default function DashboardPage() {
     ];
   }, [totals, throughput, metrics]);
 
-  if (metricsError) return <ErrorState message={metricsError.message} onRetry={() => refetchMetrics()} />;
-  if (!projectId)
+  if (metricsError && !metrics)
+    return <ErrorState message={metricsError.message} onRetry={() => refetchMetrics()} />;
+  if (!projectId && !metrics)
     return (
       <EmptyState
         icon={FolderPlus}

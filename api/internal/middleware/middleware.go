@@ -21,6 +21,8 @@ const (
 	ContextRole   contextKey = "role"
 )
 
+const preflightMaxAge = "86400"
+
 type Claims struct {
 	UserID string `json:"uid"`
 	Email  string `json:"email"`
@@ -88,12 +90,14 @@ func RateLimiter(rdb *redis.Client, limit int, window time.Duration) func(http.H
 			key := "rl:" + clientIP(r)
 			ctx := r.Context()
 
-			count, err := rdb.Incr(ctx, key).Result()
-			if err != nil {
+			pipe := rdb.Pipeline()
+			incr := pipe.Incr(ctx, key)
+			pipe.ExpireNX(ctx, key, window)
+			if _, err := pipe.Exec(ctx); err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}
-			rdb.ExpireNX(ctx, key, window)
+			count := incr.Val()
 
 			remaining := limit - int(count)
 			if remaining < 0 {
@@ -159,6 +163,7 @@ func CORS(origins []string) func(http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
 			w.Header().Set("Access-Control-Expose-Headers", "X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After")
 			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Max-Age", preflightMaxAge)
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

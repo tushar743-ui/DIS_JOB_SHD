@@ -12,9 +12,25 @@ import (
 	"github.com/tushar/dis-job-queue/api/internal/middleware"
 )
 
-type OrgHandler struct{ db *pgxpool.Pool }
+type MembershipInvalidator interface {
+	InvalidateUser(userID string)
+	InvalidateOrg(orgID string)
+}
 
-func NewOrgHandler(db *pgxpool.Pool) *OrgHandler { return &OrgHandler{db: db} }
+type OrgHandler struct {
+	db    *pgxpool.Pool
+	grant MembershipInvalidator
+}
+
+func NewOrgHandler(db *pgxpool.Pool, grant MembershipInvalidator) *OrgHandler {
+	return &OrgHandler{db: db, grant: grant}
+}
+
+func (h *OrgHandler) membershipChanged(userID string) {
+	if h.grant != nil {
+		h.grant.InvalidateUser(userID)
+	}
+}
 
 type orgRow struct {
 	ID        string    `json:"id"`
@@ -216,6 +232,7 @@ func (h *OrgHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	h.membershipChanged(targetID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "member added", "role": req.Role})
 }
 
@@ -260,6 +277,7 @@ func (h *OrgHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	h.membershipChanged(targetID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

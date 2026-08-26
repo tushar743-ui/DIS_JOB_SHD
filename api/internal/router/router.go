@@ -41,7 +41,7 @@ func New(d Deps) http.Handler {
 	owner := guard.Require(authz.RoleOwner)
 
 	authH := handler.NewAuthHandler(d.Pool, cfg)
-	orgH := handler.NewOrgHandler(d.Pool)
+	orgH := handler.NewOrgHandler(d.Pool, guard)
 	projectH := handler.NewProjectHandler(d.Pool)
 	queueH := handler.NewQueueHandler(d.Pool, d.Bus)
 	jobH := handler.NewJobHandler(d.Pool, d.Bus)

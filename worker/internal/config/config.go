@@ -49,8 +49,8 @@ func Load() *Config {
 		HeartbeatInterval: parseDuration(getEnv("HEARTBEAT_INTERVAL", "10s")),
 		Env:               getEnv("ENV", "production"),
 		DemoMode:          strings.EqualFold(getEnv("DEMO_MODE", "false"), "true"),
-		DemoInterval:      parseDuration(getEnv("DEMO_INTERVAL", "3s")),
-		DemoBurst:         parsePositiveInt(getEnv("DEMO_BURST", "2"), 2),
+		DemoInterval:      parseDuration(getEnv("DEMO_INTERVAL", "6s")),
+		DemoBurst:         parsePositiveInt(getEnv("DEMO_BURST", "1"), 1),
 		DemoBacklogMax:    parsePositiveInt(getEnv("DEMO_BACKLOG_MAX", "60"), 60),
 		DemoRetention:     parseDuration(getEnv("DEMO_RETENTION", "2h")),
 	}

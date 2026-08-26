@@ -9,9 +9,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <SWRConfig
         value={{
-          refreshInterval: 5000,
           revalidateOnFocus: true,
-          dedupingInterval: 1000,
+          focusThrottleInterval: 30000,
+          revalidateIfStale: true,
+          dedupingInterval: 2500,
           keepPreviousData: true,
           shouldRetryOnError: false,
         }}

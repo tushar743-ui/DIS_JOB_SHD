@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -98,61 +99,82 @@ func (h *MetricsHandler) avgDuration(ctx context.Context, scope, id string, hour
 	return avgMs
 }
 
-func (h *MetricsHandler) ProjectMetrics(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
-	hours := rangeHours(r)
-	bucketSecs, _ := bucketing(hours)
+type queueStats struct {
+	QueueID   string         `json:"queue_id"`
+	QueueName string         `json:"queue_name"`
+	ByStatus  map[string]int `json:"by_status"`
+}
 
-	type queueStats struct {
-		QueueID   string         `json:"queue_id"`
-		QueueName string         `json:"queue_name"`
-		ByStatus  map[string]int `json:"by_status"`
-	}
-
-	rows, err := h.db.Query(r.Context(),
+func (h *MetricsHandler) queueBreakdown(ctx context.Context, projectID string) ([]*queueStats, error) {
+	rows, err := h.db.Query(ctx,
 		`SELECT q.id, q.name, j.status::text, COUNT(j.id)
 		 FROM queues q LEFT JOIN jobs j ON j.queue_id=q.id
 		 WHERE q.project_id=$1
 		 GROUP BY q.id, q.name, j.status
 		 ORDER BY q.name`, projectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
+		return nil, err
 	}
 	defer rows.Close()
 
 	statsMap := map[string]*queueStats{}
-	order := []string{}
+	result := []*queueStats{}
 	for rows.Next() {
 		var qid, qname string
 		var status *string
 		var count int
-		rows.Scan(&qid, &qname, &status, &count)
-		if _, ok := statsMap[qid]; !ok {
-			statsMap[qid] = &queueStats{QueueID: qid, QueueName: qname, ByStatus: map[string]int{}}
-			order = append(order, qid)
+		if err := rows.Scan(&qid, &qname, &status, &count); err != nil {
+			return nil, err
+		}
+		entry, ok := statsMap[qid]
+		if !ok {
+			entry = &queueStats{QueueID: qid, QueueName: qname, ByStatus: map[string]int{}}
+			statsMap[qid] = entry
+			result = append(result, entry)
 		}
 		if status != nil {
-			statsMap[qid].ByStatus[*status] = count
+			entry.ByStatus[*status] = count
 		}
 	}
+	return result, rows.Err()
+}
 
-	result := make([]*queueStats, 0, len(statsMap))
-	for _, qid := range order {
-		result = append(result, statsMap[qid])
-	}
+func (h *MetricsHandler) activeWorkers(ctx context.Context, projectID string) int {
+	var n int
+	h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM workers WHERE project_id=$1 AND status='active'
+		   AND last_heartbeat_at > now() - interval '`+liveWorkerWindow+`'`, projectID,
+	).Scan(&n)
+	return n
+}
 
-	throughput, err := h.throughput(r.Context(), scopeProject, projectID, hours)
-	if err != nil {
+func (h *MetricsHandler) ProjectMetrics(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	hours := rangeHours(r)
+	bucketSecs, _ := bucketing(hours)
+	ctx := r.Context()
+
+	var (
+		result     []*queueStats
+		throughput []throughputPoint
+		avgMs      *float64
+		workers    int
+		queuesErr  error
+		tputErr    error
+		wg         sync.WaitGroup
+	)
+
+	wg.Add(4)
+	go func() { defer wg.Done(); result, queuesErr = h.queueBreakdown(ctx, projectID) }()
+	go func() { defer wg.Done(); throughput, tputErr = h.throughput(ctx, scopeProject, projectID, hours) }()
+	go func() { defer wg.Done(); avgMs = h.avgDuration(ctx, scopeProject, projectID, hours) }()
+	go func() { defer wg.Done(); workers = h.activeWorkers(ctx, projectID) }()
+	wg.Wait()
+
+	if queuesErr != nil || tputErr != nil {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-
-	var activeWorkers int
-	h.db.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM workers WHERE project_id=$1 AND status='active'
-		   AND last_heartbeat_at > now() - interval '`+liveWorkerWindow+`'`, projectID,
-	).Scan(&activeWorkers)
 
 	completed24h := 0
 	for _, p := range throughput {
@@ -161,12 +183,12 @@ func (h *MetricsHandler) ProjectMetrics(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"queues":          result,
-		"active_workers":  activeWorkers,
+		"active_workers":  workers,
 		"completed_24h":   completed24h,
 		"throughput_24h":  throughput,
 		"range_hours":     hours,
 		"bucket_seconds":  bucketSecs,
-		"avg_duration_ms": h.avgDuration(r.Context(), scopeProject, projectID, hours),
+		"avg_duration_ms": avgMs,
 		"generated_at":    time.Now(),
 	})
 }
@@ -176,25 +198,45 @@ func (h *MetricsHandler) QueueMetrics(w http.ResponseWriter, r *http.Request) {
 	hours := rangeHours(r)
 	bucketSecs, _ := bucketing(hours)
 
-	throughput, err := h.throughput(r.Context(), scopeQueue, queueID, hours)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
-	}
+	ctx := r.Context()
 
-	byStatus := map[string]int{}
-	sRows, err := h.db.Query(r.Context(),
-		`SELECT status::text, COUNT(*) FROM jobs WHERE queue_id=$1 GROUP BY status`, queueID)
-	if err != nil {
+	var (
+		throughput []throughputPoint
+		byStatus   = map[string]int{}
+		avgMs      *float64
+		tputErr    error
+		statusErr  error
+		wg         sync.WaitGroup
+	)
+
+	wg.Add(3)
+	go func() { defer wg.Done(); throughput, tputErr = h.throughput(ctx, scopeQueue, queueID, hours) }()
+	go func() { defer wg.Done(); avgMs = h.avgDuration(ctx, scopeQueue, queueID, hours) }()
+	go func() {
+		defer wg.Done()
+		sRows, err := h.db.Query(ctx,
+			`SELECT status::text, COUNT(*) FROM jobs WHERE queue_id=$1 GROUP BY status`, queueID)
+		if err != nil {
+			statusErr = err
+			return
+		}
+		defer sRows.Close()
+		for sRows.Next() {
+			var st string
+			var cnt int
+			if err := sRows.Scan(&st, &cnt); err != nil {
+				statusErr = err
+				return
+			}
+			byStatus[st] = cnt
+		}
+		statusErr = sRows.Err()
+	}()
+	wg.Wait()
+
+	if tputErr != nil || statusErr != nil {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
-	}
-	defer sRows.Close()
-	for sRows.Next() {
-		var st string
-		var cnt int
-		sRows.Scan(&st, &cnt)
-		byStatus[st] = cnt
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -203,7 +245,7 @@ func (h *MetricsHandler) QueueMetrics(w http.ResponseWriter, r *http.Request) {
 		"throughput_24h":  throughput,
 		"range_hours":     hours,
 		"bucket_seconds":  bucketSecs,
-		"avg_duration_ms": h.avgDuration(r.Context(), scopeQueue, queueID, hours),
+		"avg_duration_ms": avgMs,
 		"generated_at":    time.Now(),
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tushar/dis-job-queue/api/internal/middleware"
+	"golang.org/x/sync/singleflight"
 )
 
 type Role string
@@ -93,9 +94,19 @@ var resources = []resource{
 
 var errNoResource = errors.New("authz: no addressable resource in route")
 
-type Authorizer struct{ db *pgxpool.Pool }
+type Authorizer struct {
+	db     *pgxpool.Pool
+	cache  *grantCache
+	inWork singleflight.Group
+}
 
-func New(db *pgxpool.Pool) *Authorizer { return &Authorizer{db: db} }
+func New(db *pgxpool.Pool) *Authorizer {
+	return &Authorizer{db: db, cache: newGrantCache()}
+}
+
+func (a *Authorizer) InvalidateUser(userID string) { a.cache.invalidateUser(userID) }
+
+func (a *Authorizer) InvalidateOrg(orgID string) { a.cache.invalidateOrg(orgID) }
 
 func (a *Authorizer) Require(min Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -142,16 +153,29 @@ func (a *Authorizer) resolve(r *http.Request, userID string) (Grant, error) {
 		if id == "" {
 			continue
 		}
-		var orgID string
-		var role Role
-		err := a.db.QueryRow(r.Context(), res.query, id, userID).Scan(&orgID, &role)
-		if err != nil {
-			return Grant{}, err
-		}
-		return Grant{OrgID: orgID, Role: role, UserID: userID}, nil
+		return a.lookup(r, res, id, userID)
 	}
 
 	return Grant{}, errNoResource
+}
+
+func (a *Authorizer) lookup(r *http.Request, res resource, id, userID string) (Grant, error) {
+	key := res.param + "\x00" + id + "\x00" + userID
+	if grant, err, ok := a.cache.get(key); ok {
+		return grant, err
+	}
+
+	result, err, _ := a.inWork.Do(key, func() (any, error) {
+		var orgID string
+		var role Role
+		queryErr := a.db.QueryRow(r.Context(), res.query, id, userID).Scan(&orgID, &role)
+		grant := Grant{OrgID: orgID, Role: role, UserID: userID}
+		if queryErr == nil || errors.Is(queryErr, pgx.ErrNoRows) {
+			a.cache.put(key, grant, queryErr)
+		}
+		return grant, queryErr
+	})
+	return result.(Grant), err
 }
 
 func deny(w http.ResponseWriter, status int, msg string) {
