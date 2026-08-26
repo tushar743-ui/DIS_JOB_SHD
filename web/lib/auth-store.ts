@@ -26,7 +26,12 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (access, refresh, user) => {
         setAccessToken(access);
         setRefreshToken(refresh);
-        set({ accessToken: access, refreshToken: refresh, user });
+        set((s) => {
+          const sameUser = Boolean(s.user?.id) && s.user?.id === user?.id;
+          return sameUser
+            ? { accessToken: access, refreshToken: refresh, user }
+            : { accessToken: access, refreshToken: refresh, user, projectId: null, orgId: null };
+        });
       },
       setProject: (projectId, orgId) => set({ projectId, orgId }),
       clear: () => {

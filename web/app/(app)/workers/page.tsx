@@ -2,12 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Cpu, MoreVertical } from "lucide-react";
+import { Cpu, MoreVertical, Play } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
-import { useWorkers, useAllJobs } from "@/hooks/use-data";
+import { useWorkers, useAllJobs, useFeatures } from "@/hooks/use-data";
+import { useDemoSession } from "@/hooks/use-demo-session";
 import { useNow } from "@/hooks/use-elapsed-time";
 import { EmptyState, ErrorState, TableSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -22,6 +24,8 @@ export default function WorkerMonitorPage() {
   const projectId = useAuthStore((s) => s.projectId);
   const { data: workerList, error, isLoading, mutate } = useWorkers(projectId);
   const { data: runningJobs } = useAllJobs(projectId, "running", true);
+  const { data: features } = useFeatures();
+  const demo = useDemoSession("/workers");
   const now = useNow();
 
   if (error) return <ErrorState message={error.message} onRetry={() => mutate()} />;
@@ -30,8 +34,25 @@ export default function WorkerMonitorPage() {
     return (
       <EmptyState
         icon={Cpu}
-        title="No workers registered"
-        description="Start a worker process and it will register itself here within a heartbeat."
+        title="No workers on this project"
+        description={
+          "Workers are pinned to a single project, so a worker running for another project never picks up jobs from this one. " +
+          "Start a worker with this project's ID and it registers here within a heartbeat."
+        }
+        action={
+          features?.demo_login ? (
+            <div className="flex flex-col items-center gap-2">
+              <Button size="sm" onClick={demo.start} disabled={demo.starting} className="rounded-lg">
+                <Play className="size-4" aria-hidden="true" />
+                {demo.starting ? "Starting demo…" : "View the live demo"}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Opens the shared workspace where workers are running.
+              </p>
+              {demo.error && <p className="text-xs text-destructive">{demo.error}</p>}
+            </div>
+          ) : undefined
+        }
       />
     );
   }

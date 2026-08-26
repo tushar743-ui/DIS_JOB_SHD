@@ -1,29 +1,45 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { orgs, projects, type Org, type Project } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
+import { errMessage } from "@/lib/errors";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle } from "lucide-react";
 import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
 import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { user, projectId, orgId, setProject } = useAuthStore();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [orgList, setOrgList] = useState<Org[]>([]);
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [copied, setCopied] = useState(false);
   const [orgsLoaded, setOrgsLoaded] = useState(false);
+  const [projectsFor, setProjectsFor] = useState<string | null>(null);
 
   const [orgChoice, setOrgChoice] = useState<string | null>(null);
   const [projectChoice, setProjectChoice] = useState<string | null>(null);
-  const selectedOrg = orgChoice ?? orgId ?? "";
+  const selectedOrg = orgChoice ?? orgId ?? orgList[0]?.id ?? "";
   const selectedProject = projectChoice ?? projectId ?? "";
 
+  const [orgNameInput, setOrgNameInput] = useState<string | null>(null);
+  const orgName = orgNameInput ?? (user?.name ? `${user.name}'s Workspace` : "");
+  const [projectName, setProjectName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+
   const loading = Boolean(accessToken) && !orgsLoaded;
+  const projectsLoaded = projectsFor === selectedOrg;
+  const needsOrg = orgsLoaded && orgList.length === 0;
+  const needsProject = !needsOrg && Boolean(selectedOrg) && projectsLoaded && projectList.length === 0;
+  const onboarding = needsOrg || needsProject;
 
   useEffect(() => {
     if (!accessToken) return;
@@ -32,12 +48,50 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!selectedOrg || !accessToken) return;
-    projects.list(selectedOrg).then(setProjectList).catch(() => {});
+    let stale = false;
+    projects
+      .list(selectedOrg)
+      .then((list) => {
+        if (!stale) setProjectList(list);
+      })
+      .catch(() => {
+        if (!stale) setProjectList([]);
+      })
+      .finally(() => {
+        if (!stale) setProjectsFor(selectedOrg);
+      });
+    return () => {
+      stale = true;
+    };
   }, [selectedOrg, accessToken]);
 
   function save() {
     if (selectedOrg && selectedProject) {
       setProject(selectedProject, selectedOrg);
+      router.push("/dashboard");
+    }
+  }
+
+  async function createWorkspace() {
+    const project = projectName.trim();
+    const org = orgName.trim();
+    if (!project || (needsOrg && !org)) return;
+
+    setCreating(true);
+    setCreateError("");
+    try {
+      const targetOrg = needsOrg ? (await orgs.create(org)).id : selectedOrg;
+      const created = await projects.create(targetOrg, project);
+      setProject(created.id, targetOrg);
+      router.push("/dashboard");
+    } catch (e) {
+      const msg = errMessage(e, "Could not create the workspace") || "Could not create the workspace";
+      setCreateError(
+        /already exists/i.test(msg)
+          ? `"${org}" is already taken. Try a different organization name.`
+          : msg
+      );
+      setCreating(false);
     }
   }
 
@@ -67,10 +121,61 @@ export default function SettingsPage() {
       </section>
 
       <section>
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Active project</h2>
+        <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
+          {onboarding ? "Create your workspace" : "Active project"}
+        </h2>
         <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
           {loading ? (
             <Skeleton className="h-9 w-full" />
+          ) : onboarding ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {needsOrg
+                  ? "Name your organization and its first project. Queues, jobs and workers all live inside a project."
+                  : "This organization has no projects yet. Name its first one to get started."}
+              </p>
+
+              {createError && (
+                <Alert variant="destructive" className="rounded-lg">
+                  <AlertCircle className="size-4" aria-hidden="true" />
+                  <AlertDescription>{createError}</AlertDescription>
+                </Alert>
+              )}
+
+              {needsOrg && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-org">Organization name</Label>
+                  <Input
+                    id="new-org"
+                    value={orgName}
+                    onChange={(e) => setOrgNameInput(e.target.value)}
+                    placeholder="Acme Inc"
+                    autoComplete="organization"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Must be unique across JobFlow. Pick something specific to you.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="new-project">Project name</Label>
+                <Input
+                  id="new-project"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="Production"
+                />
+              </div>
+
+              <Button
+                onClick={createWorkspace}
+                disabled={creating || !projectName.trim() || (needsOrg && !orgName.trim())}
+                className="w-full bg-amber-500 hover:bg-amber-400 text-black"
+              >
+                {creating ? "Creating…" : "Save and continue"}
+              </Button>
+            </>
           ) : (
             <>
               <div className="space-y-1.5">

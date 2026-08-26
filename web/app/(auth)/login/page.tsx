@@ -10,6 +10,7 @@ import { AlertCircle, Eye, EyeOff, Play } from "lucide-react";
 import { auth } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { useFeatures } from "@/hooks/use-data";
+import { useDemoSession } from "@/hooks/use-demo-session";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,8 +30,8 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [formError, setFormError] = useState("");
   const [reveal, setReveal] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const { data: features } = useFeatures();
+  const demo = useDemoSession();
 
   const {
     register, handleSubmit, formState: { errors, isSubmitting },
@@ -51,29 +52,16 @@ export default function LoginPage() {
     }
   }
 
-  async function onDemo() {
-    setFormError("");
-    setDemoLoading(true);
-    try {
-      const res = await auth.demo();
-      setAuth(res.access_token, res.refresh_token, { id: res.user_id, email: res.email, name: res.name });
-      router.push("/dashboard");
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Could not start the demo");
-      setDemoLoading(false);
-    }
-  }
-
   return (
     <AuthShell
       title="Sign in"
       subtitle="JobFlow operations console"
       footer={<>No account? <Link href="/register" className="text-primary hover:underline">Create one</Link></>}
     >
-      {formError && (
+      {(formError || demo.error) && (
         <Alert variant="destructive" className="mb-4 rounded-lg">
           <AlertCircle className="size-4" aria-hidden="true" />
-          <AlertDescription>{formError}</AlertDescription>
+          <AlertDescription>{formError || demo.error}</AlertDescription>
         </Alert>
       )}
 
@@ -107,7 +95,7 @@ export default function LoginPage() {
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
-        <ShimmerButton type="submit" disabled={isSubmitting || demoLoading} className="h-11 w-full text-sm">
+        <ShimmerButton type="submit" disabled={isSubmitting || demo.starting} className="h-11 w-full text-sm">
           {isSubmitting ? "Signing in…" : "Sign In"}
         </ShimmerButton>
       </form>
@@ -123,12 +111,12 @@ export default function LoginPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={onDemo}
-            disabled={isSubmitting || demoLoading}
+            onClick={demo.start}
+            disabled={isSubmitting || demo.starting}
             className="mt-4 h-11 w-full text-sm"
           >
             <Play className="size-4" aria-hidden="true" />
-            {demoLoading ? "Starting demo…" : "Live demo"}
+            {demo.starting ? "Starting demo…" : "Live demo"}
           </Button>
 
           <p className="mt-2.5 text-center text-xs text-muted-foreground">

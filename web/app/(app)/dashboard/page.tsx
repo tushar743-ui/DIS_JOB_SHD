@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { FolderPlus } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useProjectMetrics, useAllJobs } from "@/hooks/use-data";
@@ -8,6 +9,7 @@ import { SectionCards, type SectionCard } from "@/components/dashboard/section-c
 import { ChartThroughputInteractive } from "@/components/dashboard/chart-throughput-interactive";
 import { RecentJobsTable } from "@/components/dashboard/recent-jobs-table";
 import { EmptyState, ErrorState, KpiSkeleton, ChartSkeleton } from "@/components/states";
+import { Button } from "@/components/ui/button";
 
 function fmtDuration(ms: number) {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
@@ -83,8 +85,13 @@ export default function DashboardPage() {
     return (
       <EmptyState
         icon={FolderPlus}
-        title="Setting up your workspace"
-        description="Creating your first project. This happens once and only takes a moment."
+        title="No workspace yet"
+        description="Create an organization and a project to start scheduling jobs."
+        action={
+          <Button render={<Link href="/settings" />} nativeButton={false} size="sm" className="rounded-lg">
+            Go to settings
+          </Button>
+        }
       />
     );
   if (!metrics)
