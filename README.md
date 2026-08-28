@@ -101,74 +101,7 @@ Then open `http://localhost:3000`.
 
 ## System Architecture
 
-```mermaid
-flowchart TB
-    subgraph Clients["Clients"]
-        Browser["Browser\nOperator Dashboard"]
-        ExtClient["External API / CLI Clients"]
-    end
-
-    subgraph Frontend["Next.js Dashboard  ·  port 3000"]
-        direction TB
-        Pages["App Router pages\nJobs · Queues · Workers · DLQ · Metrics · Dependencies"]
-        SWR["SWR data layer\npolling fallback"]
-        WSHook["useLiveEvents()\nWebSocket client"]
-    end
-
-    subgraph API["Go API Server  ·  port 8080  (chi router)"]
-        direction TB
-        MW["Middleware chain\nRecoverer -> RequestID -> Logger -> CORS -> RateLimiter -> JWT Auth -> RBAC"]
-        Handlers["REST Handlers\nauth · orgs · projects · retry-policies\nqueues · jobs · workers · dlq · metrics · failure-summary"]
-        Hub["WebSocket Hub\none Redis subscription per project"]
-        MW --> Handlers
-        MW --> Hub
-    end
-
-    subgraph Shared["shared/ module  (imported by API and Worker)"]
-        direction TB
-        Events["events\nRedis pub/sub, per-project channels"]
-        Lock["lock\nSET NX PX + Lua CAS release, fencing tokens"]
-        Shard["shard\nrendezvous (HRW) ownership + membership registry"]
-    end
-
-    subgraph WorkerPool["Worker Pods  x N  (Go)"]
-        direction TB
-        Poller["Poller\nSELECT ... FOR UPDATE SKIP LOCKED\nshard-aware, dependency-aware claim"]
-        Executor["Executor\nconcurrency semaphore · per-job timeout · retry/back-off"]
-        Scheduler["Scheduler\nleader-elected via Lock\npromote scheduled->queued · cron · unblock DAG · reclaim stuck"]
-        Heartbeat["Heartbeat\nworker_heartbeats every 10s"]
-        Poller --> Executor
-    end
-
-    PG[("PostgreSQL 16  (Neon)\nsingle source of truth for all durable state")]
-    Redis[("Redis 7  (Upstash)\nrate limits · pub/sub · locks · shard registry · AI quota")]
-    Groq["Groq LLM API\noptional - AI failure summaries"]
-
-    Browser -- "HTTPS / JWT" --> Frontend
-    ExtClient -- "HTTPS / JWT or API key" --> API
-    Frontend -- "REST" --> API
-    Frontend -. "WSS" .-> Hub
-    SWR --> Pages
-    WSHook --> Pages
-
-    Handlers --> PG
-    Handlers -- "rate limit · AI quota · dist. lock" --> Redis
-    Handlers -. "failure summaries" .-> Groq
-
-    Hub <-- "SUBSCRIBE" --> Events
-    Events <--> Redis
-
-    Poller --> PG
-    Poller <--> Shard
-    Poller <--> Events
-    Executor --> PG
-    Executor --> Events
-    Scheduler --> PG
-    Scheduler <--> Lock
-    Heartbeat --> PG
-    Shard <--> Redis
-    Lock <--> Redis
-```
+![Job flow architecture: Next.js dashboard, Go API replicas, worker pods, PostgreSQL, Redis, and the optional Groq LLM](docs/architecture.png)
 
 ### Layers, in order
 
