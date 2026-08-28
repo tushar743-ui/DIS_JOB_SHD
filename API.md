@@ -335,7 +335,7 @@ Base path: `/api/v1/projects/{projectID}/queues` and `/api/v1/queues/{queueID}`.
 |---|---|---|
 | `priority` | 1–10 | Higher runs first; default 5 |
 | `concurrency_limit` | ≥ 1 | Advisory ceiling surfaced in queue stats - actual concurrency is enforced per worker, not centrally |
-| `shard_count` | 1–64 | `1` = sharding disabled (any worker may claim any job); see [Architecture](README.md#queue-sharding) |
+| `shard_count` | 1–64 | `1` = sharding disabled (any worker may claim any job); see [Architecture](README.md#queue-sharding-locking-and-events) |
 
 `POST` returns `409` if a queue with that name already exists in the project.
 
