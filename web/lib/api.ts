@@ -106,9 +106,10 @@ export const auth = {
       "/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) }, false
     ),
   demo: () =>
-    req<{ access_token: string; refresh_token: string; user_id: string; email: string; name: string }>(
-      "/auth/demo", { method: "POST" }, false
-    ),
+    req<{
+      access_token: string; refresh_token: string; user_id: string; email: string; name: string;
+      project_id: string | null; org_id: string | null;
+    }>("/auth/demo", { method: "POST" }, false),
   me: () => req<{ id: string; email: string; name: string }>("/auth/me"),
   logout: (refresh: string) =>
     req("/auth/logout", { method: "POST", body: JSON.stringify({ refresh_token: refresh }) }, false),

@@ -149,12 +149,25 @@ func (h *AuthHandler) DemoLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	var projectID, orgID *string
+	h.db.QueryRow(r.Context(),
+		`SELECT p.id, p.org_id
+		 FROM organizations o
+		 JOIN organization_members om ON om.org_id=o.id
+		 JOIN projects p ON p.org_id=o.id
+		 WHERE om.user_id=$1
+		 ORDER BY o.created_at DESC, p.created_at DESC
+		 LIMIT 1`, userID,
+	).Scan(&projectID, &orgID)
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  token,
 		"refresh_token": refresh,
 		"user_id":       userID,
 		"email":         email,
 		"name":          name,
+		"project_id":    projectID,
+		"org_id":        orgID,
 	})
 }
 

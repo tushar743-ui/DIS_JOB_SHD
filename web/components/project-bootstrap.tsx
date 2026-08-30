@@ -7,9 +7,10 @@ import { useAuthStore } from "@/lib/auth-store";
 
 async function findWorkspace() {
   const orgList = await orgs.list();
-  for (const org of orgList) {
-    const projectList = await projects.list(org.id);
-    if (projectList.length) return { projectId: projectList[0].id, orgId: org.id };
+  if (!orgList.length) return null;
+  const lists = await Promise.all(orgList.map((org) => projects.list(org.id).catch(() => [])));
+  for (let i = 0; i < orgList.length; i++) {
+    if (lists[i].length) return { projectId: lists[i][0].id, orgId: orgList[i].id };
   }
   return null;
 }
